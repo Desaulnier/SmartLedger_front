@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm uninstall *)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(taskkill *)",
+      "Bash(select-object *)",
+      "Bash(mkdir *)",
+      "Bash(findstr *)",
+      "Read(D:\\Graduation Project\\SmartLedger\\src\\main\\java\\lu\\smartledger\\controller/**)",
+      "Read(D:\\Graduation Project\\SmartLedger\\src\\main\\java\\lu\\smartledger\\service\\impl/**)",
+      "Read(D:\\Graduation Project\\SmartLedger\\src\\main\\java\\lu\\smartledger\\model\\domain/**)",
+      "Read(D:\\Graduation Project\\SmartLedger\\src/**)",
+      "Bash(python *)",
+      "Bash(node *)"
+    ]
+  },
+  "$version": 3
+}
