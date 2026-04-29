@@ -2,13 +2,14 @@
 import { ref } from 'vue'
 import { Search, Refresh, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import axios from 'axios'
 
 const searchForm = ref({
   keyword: '',
   category: '',
   startDate: '',
   endDate: '',
-  type: ''
+  billType: ''
 })
 
 const billList = ref([
@@ -16,46 +17,46 @@ const billList = ref([
     id: 1,
     amount: 15.50,
     category: '餐饮',
-    type: 'EXPENSE',
+    billType: 'EXPENSE',
     isNecessary: true,
     remark: '食堂午餐',
-    billTime: '2026-04-11 12:30:00'
+    billDate: '2026-04-11 12:30:00'
   },
   {
     id: 2,
     amount: 50.00,
     category: '娱乐',
-    type: 'EXPENSE',
+    billType: 'EXPENSE',
     isNecessary: false,
     remark: '电影票',
-    billTime: '2026-04-10 19:00:00'
+    billDate: '2026-04-10 19:00:00'
   },
   {
     id: 3,
     amount: 1500,
     category: '家长生活费',
-    type: 'INCOME',
+    billType: 'INCOME',
     isNecessary: true,
     remark: '4月生活费',
-    billTime: '2026-04-01 08:00:00'
+    billDate: '2026-04-01 08:00:00'
   },
   {
     id: 4,
     amount: 35.80,
     category: '交通',
-    type: 'EXPENSE',
+    billType: 'EXPENSE',
     isNecessary: true,
     remark: '校车通勤充值',
-    billTime: '2026-04-09 10:15:00'
+    billDate: '2026-04-09 10:15:00'
   },
   {
     id: 5,
     amount: 89.90,
     category: '服饰鞋包',
-    type: 'EXPENSE',
+    billType: 'EXPENSE',
     isNecessary: false,
     remark: '新买的运动外套',
-    billTime: '2026-04-08 16:30:00'
+    billDate: '2026-04-08 16:30:00'
   }
 ])
 
@@ -65,6 +66,25 @@ const pagination = ref({
   pageSize: 10,
   currentPage: 1
 })
+
+const fetchBillList = async () =>{
+  const params = {
+    pageNum: pagination.value.currentPage,
+    pageSize: pagination.value.pageSize,
+    keyword: searchForm.value.keyword || undefined,
+    category: searchForm.value.category || undefined,
+    startDate: searchForm.value.startDate || undefined,
+    endDate: searchForm.value.endDate || undefined,
+    type: searchForm.value.type || undefined
+  }
+  const res = await axios.get('/api/bills/list', { params })
+  if(res.data.code === 200) {
+    billList.value = res.data.data.records
+    pagination.value.total = res.data.data.total
+  } else {
+    ElMessage.error(res.data.msg || '获取账单列表失败')
+  }
+}
 
 const handleSearch = () => {
   ElMessage.info('搜索功能需要后端接口支持')
@@ -83,9 +103,8 @@ const handleDelete = async (row) => {
       }
     )
     
-    // TODO [后端接口]: DELETE /api/bill/{id}
-    billList.value = billList.value.filter(item => item.id !== row.id)
-    pagination.value.total = billList.value.length
+   await axios.delete(`/api/bills/${row.id}`)
+   fetchBillList()
     ElMessage.success('删除成功')
   } catch {
     // 用户取消
@@ -103,6 +122,16 @@ const handleSizeChange = (val) => {
 
 const handleCurrentChange = (val) => {
   pagination.value.currentPage = val
+}
+
+const handleDateChange = (val) => {
+  if (val) {
+    searchForm.value.startDate = val[0]
+    searchForm.value.endDate = val[1]
+  } else {
+    searchForm.value.startDate = ''
+    searchForm.value.endDate = ''
+  }
 }
 </script>
 
@@ -140,7 +169,7 @@ const handleCurrentChange = (val) => {
         </el-form-item>
         <el-form-item label="日期范围">
           <el-date-picker
-            v-model="searchForm.dateRange"
+            @change="handleDateChange"
             type="daterange"
             range-separator="至"
             start-placeholder="开始日期"
@@ -164,7 +193,7 @@ const handleCurrentChange = (val) => {
     <!-- 账单列表 -->
     <el-card class="list-card fade-in-up" shadow="hover">
       <el-table :data="billList" style="width: 100%" :header-cell-style="{ background: '#f8f9fa', color: '#606266' }">
-        <el-table-column prop="billTime" label="时间" width="180" />
+        <el-table-column prop="billDate" label="时间" width="180" />
         <el-table-column label="分类" width="120">
           <template #default="{ row }">
             <span class="category-tag">{{ row.category }}</span>

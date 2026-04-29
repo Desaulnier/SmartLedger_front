@@ -1,32 +1,29 @@
 <template>
   <div class="user-profile-container">
-    <!-- 页面头部 -->
     <div class="page-header fade-in-up">
       <div class="header-content">
         <h2 class="page-title">
           <span class="title-icon">👤</span>
           个人中心
         </h2>
-        <p class="page-subtitle">管理你的个人信息和账户设置</p>
+        <p class="page-subtitle">当前页面已与登录信息对齐，编辑类接口等待后端接入</p>
       </div>
     </div>
 
     <div class="main-layout">
-      <!-- 左侧：个人信息 -->
       <div class="left-panel">
-        <!-- 基本信息卡片 -->
         <el-card class="info-card fade-in-up" shadow="hover">
           <template #header>
-            <span class="card-title">📋 基本信息</span>
+            <span class="card-title">基础信息</span>
           </template>
 
           <div class="profile-header">
             <el-avatar :size="80" class="profile-avatar">
-              {{ userInfo.username?.charAt(0)?.toUpperCase() }}
+              {{ userInfo.username?.charAt(0)?.toUpperCase() || 'U' }}
             </el-avatar>
             <div class="profile-info">
-              <div class="profile-name">{{ userInfo.username }}</div>
-              <div class="profile-email">{{ userInfo.email }}</div>
+              <div class="profile-name">{{ userInfo.username || '未设置用户名' }}</div>
+              <div class="profile-email">{{ userInfo.email || '暂无邮箱信息' }}</div>
               <el-tag :type="userInfo.role === 'ADMIN' ? 'danger' : 'success'" size="small">
                 {{ userInfo.role === 'ADMIN' ? '管理员' : '普通用户' }}
               </el-tag>
@@ -44,15 +41,14 @@
               <el-input v-model="editForm.phone" placeholder="请输入手机号" />
             </el-form-item>
             <el-form-item>
-              <el-button type="primary" @click="handleSaveProfile">保存修改</el-button>
+              <el-button type="primary" native-type="button" @click="handleSaveProfile">保存修改</el-button>
             </el-form-item>
           </el-form>
         </el-card>
 
-        <!-- 修改密码 -->
         <el-card class="password-card fade-in-up" shadow="hover">
           <template #header>
-            <span class="card-title">🔒 修改密码</span>
+            <span class="card-title">修改密码</span>
           </template>
 
           <el-form :model="passwordForm" label-width="100px" class="password-form">
@@ -66,59 +62,47 @@
               <el-input v-model="passwordForm.confirmPassword" type="password" placeholder="请再次输入新密码" show-password />
             </el-form-item>
             <el-form-item>
-              <el-button type="primary" @click="handleChangePassword">修改密码</el-button>
+              <el-button type="primary" native-type="button" @click="handleChangePassword">修改密码</el-button>
             </el-form-item>
           </el-form>
         </el-card>
       </div>
 
-      <!-- 右侧：统计数据 -->
       <div class="right-panel">
-        <!-- 本月消费统计 -->
         <el-card class="stats-card fade-in-up" shadow="hover">
           <template #header>
-            <span class="card-title">📊 本月消费统计</span>
+            <span class="card-title">当前登录信息</span>
           </template>
 
           <div class="stats-grid">
-            <div class="stat-item" v-for="stat in monthStats" :key="stat.label">
+            <div class="stat-item" v-for="stat in accountStats" :key="stat.label">
               <div class="stat-icon">{{ stat.icon }}</div>
               <div class="stat-content">
                 <div class="stat-label">{{ stat.label }}</div>
-                <div class="stat-value" :class="stat.class">{{ stat.value }}</div>
+                <div class="stat-value">{{ stat.value }}</div>
+                <div class="stat-desc">{{ stat.desc }}</div>
               </div>
             </div>
           </div>
         </el-card>
 
-        <!-- 账户安全 -->
         <el-card class="security-card fade-in-up" shadow="hover">
           <template #header>
-            <span class="card-title">🛡️ 账户安全</span>
+            <span class="card-title">后端接口待接入</span>
           </template>
 
-          <div class="security-list">
-            <div class="security-item">
-              <div class="security-info">
-                <span class="security-icon">📧</span>
-                <div>
-                  <div class="security-label">邮箱绑定</div>
-                  <div class="security-value">{{ userInfo.email }}</div>
-                </div>
-              </div>
-              <el-tag type="success" size="small">已绑定</el-tag>
+          <div class="todo-list">
+            <div class="todo-item">
+              <strong>GET /users/profile</strong>
+              <span>加载最新个人资料</span>
             </div>
-            <div class="security-item">
-              <div class="security-info">
-                <span class="security-icon">📱</span>
-                <div>
-                  <div class="security-label">手机绑定</div>
-                  <div class="security-value">{{ userInfo.phone || '未绑定' }}</div>
-                </div>
-              </div>
-              <el-tag :type="userInfo.phone ? 'success' : 'info'" size="small">
-                {{ userInfo.phone ? '已绑定' : '未绑定' }}
-              </el-tag>
+            <div class="todo-item">
+              <strong>PUT /users/profile</strong>
+              <span>保存用户名和手机号</span>
+            </div>
+            <div class="todo-item">
+              <strong>PUT /users/password</strong>
+              <span>完成密码修改</span>
             </div>
           </div>
         </el-card>
@@ -131,62 +115,66 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 
-// 用户信息
 const userInfo = ref({
-  id: 1,
-  username: 'lu_user',
-  email: 'lu@example.com',
-  phone: '138****1234',
-  role: 'USER',
-  monthlyAllowance: 2000,
-  dailySurvivalCost: 30
+  id: null,
+  username: '',
+  email: '',
+  phone: '',
+  role: 'USER'
 })
 
-// 编辑表单
 const editForm = ref({
-  username: userInfo.value.username,
-  email: userInfo.value.email,
-  phone: userInfo.value.phone
+  username: '',
+  email: '',
+  phone: ''
 })
 
-// 密码表单
 const passwordForm = ref({
   oldPassword: '',
   newPassword: '',
   confirmPassword: ''
 })
 
-// 本月统计（模拟数据）
-const monthStats = computed(() => [
-  { icon: '💰', label: '总收入', value: '¥2000', class: 'income' },
-  { icon: '💸', label: '总支出', value: '¥1450', class: 'expense' },
-  { icon: '📈', label: '结余', value: '¥550', class: 'balance' },
-  { icon: '📅', label: '剩余天数', value: '10 天', class: 'days' }
+const accountStats = computed(() => [
+  { icon: '📧', label: '登录邮箱', value: userInfo.value.email || '未获取', desc: '来自登录返回信息' },
+  { icon: '📱', label: '手机号', value: userInfo.value.phone || '未填写', desc: '后续可由个人资料接口维护' },
+  { icon: '🪪', label: '用户角色', value: userInfo.value.role || 'USER', desc: '决定菜单与权限范围' },
+  { icon: '🆔', label: '用户 ID', value: userInfo.value.id ?? '-', desc: '如果登录返回中包含则直接展示' }
 ])
 
 onMounted(() => {
   loadUserInfo()
 })
 
-// 加载用户信息
 const loadUserInfo = () => {
-  // TODO [后端接口]: GET /api/user/profile
-  // userInfo.value = res.data
+  const localUser = localStorage.getItem('userInfo')
+  if (!localUser) return
+
+  try {
+    const parsed = JSON.parse(localUser)
+    userInfo.value = {
+      ...userInfo.value,
+      ...parsed
+    }
+    editForm.value = {
+      username: parsed.username || '',
+      email: parsed.email || '',
+      phone: parsed.phone || ''
+    }
+  } catch (error) {
+    console.error('解析本地用户信息失败:', error)
+  }
 }
 
-// 保存个人信息
 const handleSaveProfile = () => {
   if (!editForm.value.username.trim()) {
     ElMessage.warning('请输入用户名')
     return
   }
-  // TODO [后端接口]: PUT /api/user/profile
-  userInfo.value.username = editForm.value.username
-  userInfo.value.phone = editForm.value.phone
-  ElMessage.success('个人信息已更新')
+
+  ElMessage.info('后端接口待实现：PUT /users/profile')
 }
 
-// 修改密码
 const handleChangePassword = () => {
   if (!passwordForm.value.oldPassword) {
     ElMessage.warning('请输入旧密码')
@@ -200,9 +188,8 @@ const handleChangePassword = () => {
     ElMessage.warning('两次密码输入不一致')
     return
   }
-  // TODO [后端接口]: PUT /api/user/password
-  ElMessage.success('密码修改成功')
-  passwordForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+
+  ElMessage.info('后端接口待实现：PUT /users/password')
 }
 </script>
 
@@ -220,175 +207,135 @@ const handleChangePassword = () => {
   to { opacity: 1; transform: translateY(0); }
 }
 
-// 页面头部
 .page-header {
   margin-bottom: 16px;
   padding: 16px 20px;
-  background: linear-gradient(135deg, #2F4F4F 0%, #3a6363 100%);
+  background: linear-gradient(135deg, #2f4f4f 0%, #3a6363 100%);
   border-radius: 12px;
   color: white;
-
-  .header-content {
-    .page-title {
-      margin: 0 0 4px 0;
-      font-size: 20px;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      .title-icon { font-size: 24px; }
-    }
-    .page-subtitle { margin: 0; font-size: 12px; opacity: 0.85; }
-  }
 }
 
-// 主布局
+.page-title {
+  margin: 0 0 4px 0;
+  font-size: 20px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-subtitle {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
 .main-layout {
   display: flex;
   gap: 16px;
+}
 
-  .left-panel {
-    flex: 1;
-    display: flex;
+.left-panel,
+.right-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.profile-avatar {
+  background: linear-gradient(135deg, #2f4f4f, #4a7c7c);
+  color: white;
+  font-weight: 700;
+  font-size: 28px;
+}
+
+.profile-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 4px;
+}
+
+.profile-email {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 6px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.stat-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f7f9fc;
+}
+
+.stat-icon {
+  font-size: 20px;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #909399;
+}
+
+.stat-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  margin: 4px 0;
+}
+
+.stat-desc {
+  font-size: 12px;
+  color: #909399;
+}
+
+.todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.todo-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f7f9fc;
+  color: #606266;
+}
+
+@media (max-width: 768px) {
+  .main-layout {
     flex-direction: column;
-    gap: 14px;
   }
 
-  .right-panel {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-}
-
-// 通用卡片
-.el-card {
-  border-radius: 12px;
-
-  :deep(.el-card__header) {
-    padding: 12px 16px;
-    border-bottom: 1px solid #f0f0f0;
-  }
-
-  :deep(.el-card__body) {
-    padding: 16px;
-  }
-
-  .card-title {
-    font-size: 15px;
-    font-weight: 600;
-    color: #303133;
-  }
-}
-
-// 基本信息
-.info-card {
-  .profile-header {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding-bottom: 16px;
-    margin-bottom: 16px;
-    border-bottom: 1px solid #f0f0f0;
-
-    .profile-avatar {
-      background: linear-gradient(135deg, #2F4F4F, #4a7c7c);
-      color: white;
-      font-weight: 700;
-      font-size: 28px;
-    }
-
-    .profile-info {
-      flex: 1;
-
-      .profile-name {
-        font-size: 18px;
-        font-weight: 600;
-        color: #303133;
-        margin-bottom: 4px;
-      }
-
-      .profile-email {
-        font-size: 12px;
-        color: #909399;
-        margin-bottom: 6px;
-      }
-    }
-  }
-
-  .profile-form {
-    :deep(.el-form-item) {
-      margin-bottom: 14px;
-    }
-  }
-}
-
-// 修改密码
-.password-card {
-  .password-form {
-    :deep(.el-form-item) {
-      margin-bottom: 14px;
-    }
-  }
-}
-
-// 消费统计
-.stats-card {
   .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-
-    .stat-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px;
-      background: #f8f9fa;
-      border-radius: 8px;
-
-      .stat-icon { font-size: 24px; }
-
-      .stat-content {
-        flex: 1;
-        .stat-label { font-size: 11px; color: #909399; margin-bottom: 2px; }
-        .stat-value { font-size: 16px; font-weight: 700; color: #303133; }
-      }
-    }
+    grid-template-columns: 1fr;
   }
-}
-
-// 账户安全
-.security-card {
-  .security-list {
-    .security-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 12px;
-      background: #f8f9fa;
-      border-radius: 8px;
-      margin-bottom: 8px;
-
-      &:last-child { margin-bottom: 0; }
-
-      .security-info {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-
-        .security-icon { font-size: 20px; }
-
-        .security-label { font-size: 13px; font-weight: 600; color: #303133; }
-        .security-value { font-size: 12px; color: #909399; }
-      }
-    }
-  }
-}
-
-// 响应式
-@media (max-width: 1200px) {
-  .main-layout { flex-direction: column; }
 }
 </style>

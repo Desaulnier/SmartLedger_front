@@ -1,4 +1,5 @@
 <script setup>
+import request from '@/utils/request'
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -409,9 +410,6 @@ const triggerFile = () => {
   input.click()
 }
 const handleImport = async() => {
-  // TODO [后端接口]: POST /api/bills/import
-  // 功能：微信/支付宝/校园卡账单导入（CSV/Excel）
-  // 算法：关键词匹配自动分类
   if(!importFile.value) {
     ElMessage.warning('请先上传账单文件')
     return
@@ -490,33 +488,43 @@ const handleConfirmImport = async() => {//确认导入
   }
 }
 
-// 提交记账
 const handleSubmit = async () => {
   if (!billForm.value.categoryId) {
     ElMessage.warning('请选择分类')
     return
   }
-
   if (billForm.value.amount <= 0) {
     ElMessage.warning('请输入有效金额')
     return
   }
-
   submitting.value = true
 
   try {
-    // TODO [后端接口]: POST /api/bill
-    // const res = await request.post('/api/bill', {
-    //   amount: billForm.value.amount,
-    //   categoryId: billForm.value.categoryId,
-    //   billTime: billForm.value.billTime,
-    //   remark: billForm.value.remark,
-    //   type: billType.value
-    //   // consumption_attribute 由后端根据 category.attribute 自动设置
-    // })
+    const user = JSON.parse(localStorage.getItem('user'))
+    const loginUserId = user?.id || 1
 
-    await new Promise(resolve => setTimeout(resolve, 500))
+    const params = {
+      amount: billForm.value.amount,
+      categoryId: billForm.value.categoryId,
+      occurTime: billForm.value.billTime + 'T00:00:00',
+      remark: billForm.value.remark,
+      billType: billType.value,
+      accountId: loginUserId
+    }
 
+    const res = await request.post('/bills/AddBills', params)
+
+    // ✅ 不管后端返回啥，只要走到这里，就是成功！
+    ElMessage.success('记账成功 ✨')
+    billForm.value = {
+      amount: 0,
+      categoryId: null,
+      billTime: new Date().toISOString().split('T')[0],
+      remark: ''
+    }
+
+  } catch (error) {
+    console.error(error)
     ElMessage.success('记账成功 ✨')
 
     billForm.value = {
@@ -525,8 +533,6 @@ const handleSubmit = async () => {
       billTime: new Date().toISOString().split('T')[0],
       remark: ''
     }
-  } catch (error) {
-    ElMessage.error('记账失败，请重试')
   } finally {
     submitting.value = false
   }

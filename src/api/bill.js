@@ -1,10 +1,10 @@
 import request from '@/utils/request'
 export function createBill(data){
-  return request.post('/bills',data)
+  return request.post('/bills/AddBills',data)
 }
 
 export function getBillList(params) {
-  return request.get('/bills', { params })
+  return request.get('/bills/list', { params })
 }
 
 export function importBill(formData) {
@@ -16,7 +16,7 @@ export function importBill(formData) {
 }
 
 export function deleteBill(id) {
-  return request.delete('/bills/delete_bill',{id})
+  return request.delete(`/bills/${id}`)
 }
 
 export function confirmImport(data) {

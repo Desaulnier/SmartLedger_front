@@ -1,27 +1,24 @@
 <script setup>
 import { ref, onMounted } from "vue";
-import {useRouter, useRoute} from "vue-router";
-import { ElMessage } from 'element-plus';
-import { Message } from '@element-plus/icons-vue';
+import { useRouter } from "vue-router";
+import { ElMessage } from "element-plus";
+import { Message } from "@element-plus/icons-vue";
 import request from "@/utils/request";
 
-const router = useRouter()
-const route = useRoute()
-const queryValue = route.query
-
+const router = useRouter();
 const loading = ref(false);
+const loginFormRef = ref(null);
 
 const loginForm = ref({
   email: "",
   password: "",
-  rememberMe: false // 记住密码
+  rememberMe: false,
 });
-const loginFormRef = ref(null);
 
-// 页面加载时自动填充
 onMounted(() => {
   const savedEmail = localStorage.getItem("rem_email");
   const savedPwd = localStorage.getItem("rem_pwd");
+
   if (savedEmail && savedPwd) {
     loginForm.value.email = savedEmail;
     loginForm.value.password = savedPwd;
@@ -32,83 +29,89 @@ onMounted(() => {
 const rules = {
   email: [
     { required: true, message: "请输入邮箱地址", trigger: "blur" },
-    { type: 'email', message: '请输入正确的邮箱格式', trigger: ['blur', 'change'] }
+    { type: "email", message: "请输入正确的邮箱格式", trigger: ["blur", "change"] },
   ],
   password: [
-    {
-      required: true,
-      message: "请输入密码",
-      trigger: "blur",
-    },
+    { required: true, message: "请输入密码", trigger: "blur" },
   ],
 };
 
 const login = async () => {
   if (!loginFormRef.value) return;
+
   try {
     await loginFormRef.value.validate();
-    loading.value = true;//开始加载
-  } catch (error) {
+  } catch {
     ElMessage.warning("请完善登录信息");
     return;
   }
-  
-  const u = { 
-    email: loginForm.value.email, 
-    password: loginForm.value.password 
-  };
+
+  loading.value = true;
 
   try {
-    const res = await request.post('/users/login', u);
-    console.log('后端返回：', res);
+    const res = await request.post("/users/login", {
+      email: loginForm.value.email.trim(),
+      password: loginForm.value.password,
+    });
 
-    if (res && res.code === 200) {
-      const userData = res.data.user;
-      const token = res.data.token;//获取token
-      localStorage.setItem("token", token);
-      localStorage.setItem('userInfo', JSON.stringify(userData));
+    if (!res || res.code !== 200) {
+      ElMessage.error(res?.message || res?.msg || "邮箱或密码错误");
+      return;
+    }
 
-      // 记住密码逻辑处理
-      if (loginForm.value.rememberMe) {
-        localStorage.setItem("rem_email", loginForm.value.email);
-        localStorage.setItem("rem_pwd", loginForm.value.password);
-      } else {
-        localStorage.removeItem("rem_email");
-        localStorage.removeItem("rem_pwd");
-      }
+    const userData = { ...(res.data?.user || {}) };
+    const token = res.data?.token;
 
-      if (userData.status !== "ACTIVE") {
-        if (userData.status === "PENDING") {
-          ElMessage.warning("账号正在审核中，请稍后再试");
-        } else {
-          ElMessage.error("账号异常（" + userData.status + "），请联系管理员");
-        }
-        return;
-      }
+    if (!token || !userData.email) {
+      ElMessage.error("登录返回数据不完整");
+      return;
+    }
 
-      ElMessage.success(res.message || '登录成功');
+    if (userData.password) {
+      delete userData.password;
+    }
 
-      if (userData.role === "ADMIN") {
-        router.push({ path: '/admin/Dashboard' });
-      } else {
-        router.push({ path: '/user' });
-      }
+    localStorage.setItem("token", token);
+    localStorage.setItem("userInfo", JSON.stringify(userData));
+
+    if (loginForm.value.rememberMe) {
+      localStorage.setItem("rem_email", loginForm.value.email);
+      localStorage.setItem("rem_pwd", loginForm.value.password);
     } else {
-      ElMessage.error(res.message || '用户名或密码错误');
+      localStorage.removeItem("rem_email");
+      localStorage.removeItem("rem_pwd");
+    }
+
+    if (userData.status !== "ACTIVE") {
+      if (userData.status === "PENDING") {
+        ElMessage.warning("账号正在审核中，请稍后再试");
+      } else {
+        ElMessage.error(`账号状态异常：${userData.status}`);
+      }
+      return;
+    }
+
+    ElMessage.success(res.message || "登录成功");
+
+    if (userData.role === "ADMIN") {
+      router.push({ path: "/admin/dashboard" });
+    } else {
+      router.push({ path: "/user" });
     }
   } catch (error) {
-    console.error('网络请求失败:', error);
-    ElMessage.error('无法连接到服务器，请检查后端是否启动');
+    console.error("登录请求失败:", error);
+    ElMessage.error("无法连接到服务器，请检查后端是否启动");
   } finally {
-    loading.value = false;//结束加载
+    loading.value = false;
   }
 };
 
-const changeUrl = () => {
-  router.push({ name: 'Register' });
+const goToRegister = () => {
+  router.push({ name: "Register" });
 };
-const changeUrl1 = () => {
-  router.push({ name: 'ForgotPassword' });
+
+const goToForgotPassword = () => {
+  router.push({ name: "ForgotPassword" });
 };
 
 const options = {
@@ -131,7 +134,16 @@ const options = {
     color: { value: "#2F4F4F" },
     links: { color: "#FFFFFF", distance: 150, enable: true, opacity: 0.4, width: 1.2 },
     collisions: { enable: true },
-    move: { attract: { enable: false, rotateX: 600, rotateY: 1200 }, bounce: false, direction: "none", enable: true, out_mode: "out", random: false, speed: 0.5, straight: false },
+    move: {
+      attract: { enable: false, rotateX: 600, rotateY: 1200 },
+      bounce: false,
+      direction: "none",
+      enable: true,
+      out_mode: "out",
+      random: false,
+      speed: 0.5,
+      straight: false,
+    },
     number: { density: { enable: true, value_area: 800 }, value: 150 },
     opacity: { value: 0.7 },
     shape: { type: "star" },
@@ -148,31 +160,28 @@ const options = {
     <div class="loginPart">
       <h2>欢迎登录智能账单管理平台</h2>
       <el-form
-          :model="loginForm"
-          ref="loginFormRef"
-          :rules="rules"
-          label-width="100px"
-          style="transform: translate(-30px)"
-          @keyup.enter="login"
+        ref="loginFormRef"
+        :model="loginForm"
+        :rules="rules"
+        label-width="100px"
+        style="transform: translate(-30px)"
+        @keyup.enter="login"
       >
         <el-form-item label="账号" prop="email">
-          <el-input
-              v-model="loginForm.email"
-              placeholder="请输入邮箱"
-              clearable
-          >
+          <el-input v-model="loginForm.email" placeholder="请输入邮箱" clearable>
             <template #prefix>
               <el-icon><Message /></el-icon>
-            </template> 
+            </template>
           </el-input>
         </el-form-item>
+
         <el-form-item label="密码" prop="password">
           <el-input
-              type="password"
-              v-model="loginForm.password"
-              placeholder="请输入密码"
-              show-password
-              clearable
+            v-model="loginForm.password"
+            type="password"
+            placeholder="请输入密码"
+            show-password
+            clearable
           />
         </el-form-item>
 
@@ -181,20 +190,21 @@ const options = {
         </el-form-item>
 
         <el-button
-            class="btn"
-            type="primary"
-            :loading="loading"
-            @click="login"
-            auto-insert-space
-        >登录</el-button>
+          class="btn"
+          type="primary"
+          native-type="button"
+          :loading="loading"
+          @click="login"
+          auto-insert-space
+        >
+          登录
+        </el-button>
+
         <div style="text-align: right; transform: translate(0, 30px)">
-          <el-link
-              type="danger"
-              @click="changeUrl1()"
-              style="margin-right: 140px">
+          <el-link type="danger" @click="goToForgotPassword" style="margin-right: 140px">
             忘记密码？
           </el-link>
-          <el-link type="warning" @click="changeUrl">没有账号？去注册</el-link>
+          <el-link type="warning" @click="goToRegister">没有账号？去注册</el-link>
         </div>
       </el-form>
     </div>
@@ -202,7 +212,6 @@ const options = {
 </template>
 
 <style lang="scss" scoped>
-/* 样式部分保持不变 */
 .login {
   height: 100vh;
   width: 100vw;
@@ -254,22 +263,11 @@ h2 {
 .el-input__wrapper {
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid rgba(255, 255, 255, 0.3);
-  &:hover, &:focus-within {
+
+  &:hover,
+  &:focus-within {
     border-color: rgba(255, 255, 255, 0.5);
     box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
-  }
-}
-
-.el-input__placeholder {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.el-button {
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  &:hover {
-    background: rgba(255, 255, 255, 0.3);
-    border-color: rgba(255, 255, 255, 0.4);
   }
 }
 
@@ -279,6 +277,7 @@ h2 {
     width: 90%;
     padding: 30px;
   }
+
   .btn {
     transform: translate(0);
     width: 100%;
