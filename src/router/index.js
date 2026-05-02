@@ -32,7 +32,7 @@ const router = createRouter({
         {
           path: 'add-bill',
           name: 'UserAddBill',
-          component: () => import('@/views/bill/AddBill.vue'),
+          component: () => import('@/views/add-bill/index.vue'),
           meta: { title: '记一笔', group: 'core' }
         },
         {

@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { Message, Lock } from "@element-plus/icons-vue";
+import request from "@/utils/request";
 
 const router = useRouter();
 
@@ -53,9 +54,16 @@ const getCode = async () => {
     return;
   }
 
-  ElMessage.info("后端接口待实现：GET /users/send-reset-code");
-  // TODO: 后端实现后启用
-  // await request.get("/users/send-reset-code", { params: { email: form.value.email.trim() } })
+ const res = await request.get("/users/send-reset-code", {
+  params: { email: form.value.email.trim() }
+})
+
+if (res.code !== 200) {
+  ElMessage.error(res.message || res.msg || "验证码发送失败")
+  return
+}
+ElMessage.success("验证码发送成功")
+
 
   codeLoading.value = true;
   isTime.value = false;
@@ -84,13 +92,22 @@ const resetPassword = async () => {
 
   submitLoading.value = true;
   try {
-    ElMessage.info("后端接口待实现：POST /users/reset-password");
-    // TODO: 后端实现后启用
-    // await request.post("/users/reset-password", {
-    //   email: form.value.email.trim(),
-    //   code: form.value.code.trim(),
-    //   newPassword: form.value.newPassword
-    // })
+    const res = await request.post("/users/reset-password", {
+    email: form.value.email.trim(),
+    code: form.value.code.trim(),
+    newPassword: form.value.newPassword
+    })
+
+  if (res.code !== 200) {
+  ElMessage.error(res.message || res.msg || "密码重置失败")
+  return
+  }
+
+  ElMessage.success(res.message || res.msg || "密码重置成功，请重新登录")
+  setTimeout(() => {
+  router.push("/login")
+  }, 1200)
+
   } finally {
     submitLoading.value = false;
   }
@@ -137,7 +154,6 @@ const options = {
       <div class="card-header">
         <div class="header-icon">🔐</div>
         <h2 class="card-title">忘记密码</h2>
-        <p class="card-subtitle">页面已就绪，等待后端重置密码接口接入</p>
       </div>
 
       <el-form
@@ -291,14 +307,39 @@ const options = {
 
 .code-btn {
   min-width: 128px;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.4);
+  }
 }
 
 .submit-btn {
   width: 100%;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.4);
+  }
 }
 
 .footer-link {
   text-align: center;
   margin-top: 20px;
+}
+
+.el-input__wrapper {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+
+  &:hover,
+  &:focus-within {
+    border-color: rgba(255, 255, 255, 0.5);
+    box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+  }
 }
 </style>

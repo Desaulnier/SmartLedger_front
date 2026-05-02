@@ -1,0 +1,5 @@
+{
+  "qwen-code.apiKey": "sk-82aa7467ba21493ba5db5d75a395f00a",
+  "qwen-code.baseUrl": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  "qwen-code.model": "qwen3-coder-plus"
+}

@@ -9,7 +9,13 @@ const request = axios.create({
 
 request.interceptors.request.use(config => {
   const token = localStorage.getItem('token')
-  const publicPaths = ['/users/login', '/users/register', '/users/send-code']
+  const publicPaths = [
+    '/users/login',
+    '/users/register',
+    '/users/send-code',
+    '/users/send-reset-code',
+    '/users/reset-password'
+  ]
 
   if (token && !publicPaths.includes(config.url)) {
     config.headers.Authorization = `Bearer ${token}`

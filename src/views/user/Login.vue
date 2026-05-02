@@ -71,6 +71,10 @@ const login = async () => {
       delete userData.password;
     }
 
+    if (!userData.name && userData.username) {
+      userData.name = userData.username;
+    }
+
     localStorage.setItem("token", token);
     localStorage.setItem("userInfo", JSON.stringify(userData));
 
