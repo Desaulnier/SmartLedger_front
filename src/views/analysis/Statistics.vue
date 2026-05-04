@@ -1,18 +1,27 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import {
+  Setting,
+  Bell,
+  Check,
+  DataAnalysis,
+  PieChart,
+  TrendCharts,
+  Histogram,
+  MagicStick,
+  ChatDotRound,
+  Clock
+} from '@element-plus/icons-vue'
+import { getBudgetInfo, updateBudget } from '@/api/budget'
 
+// 预算设置数据
 const budgetSetting = ref({
-  monthly: 2000,
-  categories: {
-    '餐饮': 800,
-    '交通': 200,
-    '购物': 400,
-    '娱乐': 300,
-    '学习': 200,
-    '其他': 100
-  }
+  monthly: 0,
+  categories: {}
 })
 
+// 预警设置数据
 const alertSettings = ref({
   budget80: true,
   budget100: true,
@@ -20,13 +29,63 @@ const alertSettings = ref({
   unnecessaryRatio: true
 })
 
-const saveBudget = () => {
-  console.log('保存预算：', budgetSetting.value)
+// 加载状态
+const loading = ref(false)
+const savingBudget = ref(false)
+const savingAlerts = ref(false)
+
+// 加载预算信息
+const loadBudgetInfo = async () => {
+  try {
+    loading.value = true
+    const response = await getBudgetInfo()
+    if (response.data) {
+      budgetSetting.value = {
+        monthly: response.data.monthly || 0,
+        categories: response.data.categories || {}
+      }
+    }
+  } catch (error) {
+    console.error('加载预算信息失败:', error)
+    ElMessage.warning('加载预算信息失败，请稍后重试')
+  } finally {
+    loading.value = false
+  }
 }
 
-const saveAlertSettings = () => {
-  console.log('保存预警设置：', alertSettings.value)
+// 保存预算设置
+const saveBudget = async () => {
+  try {
+    savingBudget.value = true
+    await updateBudget(budgetSetting.value)
+    ElMessage.success('预算设置保存成功')
+  } catch (error) {
+    console.error('保存预算设置失败:', error)
+    ElMessage.error('保存预算设置失败，请重试')
+  } finally {
+    savingBudget.value = false
+  }
 }
+
+// 保存预警设置
+const saveAlertSettings = async () => {
+  try {
+    savingAlerts.value = true
+    // TODO: 调用预警设置API
+    console.log('保存预警设置：', alertSettings.value)
+    ElMessage.success('预警设置保存成功')
+  } catch (error) {
+    console.error('保存预警设置失败:', error)
+    ElMessage.error('保存预警设置失败，请重试')
+  } finally {
+    savingAlerts.value = false
+  }
+}
+
+// 组件挂载时加载数据
+onMounted(() => {
+  loadBudgetInfo()
+})
 </script>
 
 <template>
@@ -36,11 +95,13 @@ const saveAlertSettings = () => {
     </div>
 
     <!-- 预算设置 -->
-    <el-card class="budget-setting-card" shadow="hover">
-      <div class="card-title">
-        <el-icon><Setting /></el-icon>
-        <span>预算设置</span>
-      </div>
+    <el-card class="budget-setting-card" shadow="hover" :loading="loading">
+      <template #header>
+        <div class="card-title">
+          <el-icon><Setting /></el-icon>
+          <span>预算设置</span>
+        </div>
+      </template>
 
       <el-form :model="budgetSetting" label-width="120px">
         <el-form-item label="月度总预算">
@@ -49,6 +110,7 @@ const saveAlertSettings = () => {
             :min="0"
             :precision="2"
             :step="100"
+            :disabled="loading"
           />
           <span class="form-tip">元/月</span>
         </el-form-item>
@@ -69,14 +131,23 @@ const saveAlertSettings = () => {
                 :precision="0"
                 :step="50"
                 size="small"
+                :disabled="loading"
               />
               <span class="form-tip">元</span>
             </div>
           </div>
+          <div v-if="Object.keys(budgetSetting.categories).length === 0 && !loading" class="no-data">
+            暂无分类预算数据，请先设置预算
+          </div>
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" @click="saveBudget">
+          <el-button
+            type="primary"
+            @click="saveBudget"
+            :loading="savingBudget"
+            :disabled="loading"
+          >
             <el-icon><Check /></el-icon>
             保存预算设置
           </el-button>
@@ -86,10 +157,12 @@ const saveAlertSettings = () => {
 
     <!-- 预警设置 -->
     <el-card class="alert-setting-card" shadow="hover">
-      <div class="card-title">
-        <el-icon><Bell /></el-icon>
-        <span>预警设置</span>
-      </div>
+      <template #header>
+        <div class="card-title">
+          <el-icon><Bell /></el-icon>
+          <span>预警设置</span>
+        </div>
+      </template>
 
       <el-form :model="alertSettings" label-width="200px">
         <el-form-item label="预算使用达 80%">
@@ -113,7 +186,11 @@ const saveAlertSettings = () => {
         </el-form-item>
 
         <el-form-item>
-          <el-button type="primary" @click="saveAlertSettings">
+          <el-button
+            type="primary"
+            @click="saveAlertSettings"
+            :loading="savingAlerts"
+          >
             <el-icon><Check /></el-icon>
             保存预警设置
           </el-button>
@@ -123,74 +200,45 @@ const saveAlertSettings = () => {
 
     <!-- 消费分析 -->
     <el-card class="analysis-card" shadow="hover">
-      <div class="card-title">
-        <el-icon><DataAnalysis /></el-icon>
-        <span>消费分析</span>
+      <template #header>
+        <div class="card-title">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>消费分析</span>
+        </div>
+      </template>
+
+      <div class="analysis-placeholder">
+        <el-icon size="48" class="placeholder-icon"><DataAnalysis /></el-icon>
+        <h4>消费分析功能开发中</h4>
+        <p>正在开发强大的消费分析功能，包括消费趋势、预算对比等</p>
+        <el-button type="primary" plain disabled size="small">
+          <el-icon><Clock /></el-icon>
+          敬请期待
+        </el-button>
       </div>
-
-      <el-row :gutter="24">
-        <el-col :span="12">
-          <div class="chart-placeholder">
-            <el-icon><PieChart /></el-icon>
-            <span>消费分类占比饼图</span>
-          </div>
-        </el-col>
-        <el-col :span="12">
-          <div class="chart-placeholder">
-            <el-icon><TrendCharts /></el-icon>
-            <span>每日消费趋势折线图</span>
-          </div>
-        </el-col>
-      </el-row>
-
-      <el-row :gutter="24" style="margin-top: 24px">
-        <el-col :span="12">
-          <div class="chart-placeholder">
-            <el-icon><Histogram /></el-icon>
-            <span>预算 vs 实际支出对比</span>
-          </div>
-        </el-col>
-        <el-col :span="12">
-          <div class="chart-placeholder">
-            <el-icon><MagicStick /></el-icon>
-            <span>必要/非必要消费对比</span>
-          </div>
-        </el-col>
-      </el-row>
     </el-card>
 
     <!-- 智能建议 -->
     <el-card class="advice-card" shadow="hover">
-      <div class="card-title">
-        <el-icon><ChatDotRound /></el-icon>
-        <span>智能建议</span>
+      <template #header>
+        <div class="card-title">
+          <el-icon><ChatDotRound /></el-icon>
+          <span>智能建议</span>
+        </div>
+      </template>
+
+      <div class="advice-placeholder">
+        <el-icon size="48" class="placeholder-icon"><ChatDotRound /></el-icon>
+        <h4>智能建议功能开发中</h4>
+        <p>基于您的消费数据，我们将为您提供个性化的消费建议</p>
+        <el-alert
+          title="暂无建议"
+          description="设置预算并记录消费后，系统将自动生成智能建议"
+          type="info"
+          :closable="false"
+          show-icon
+        />
       </div>
-
-      <el-alert
-        title="本月餐饮支出偏高"
-        description="建议减少外卖次数，多去食堂就餐，预计可节省 150 元"
-        type="warning"
-        :closable="false"
-        show-icon
-        style="margin-bottom: 16px"
-      />
-
-      <el-alert
-        title="非必要消费占比 35%"
-        description="在合理范围内，继续保持理性消费"
-        type="success"
-        :closable="false"
-        show-icon
-        style="margin-bottom: 16px"
-      />
-
-      <el-alert
-        title="预计本月结余 750 元"
-        description="按当前消费速度，月底可结余约 750 元，可用于下月规划"
-        type="info"
-        :closable="false"
-        show-icon
-      />
     </el-card>
   </div>
 </template>
@@ -256,23 +304,39 @@ const saveAlertSettings = () => {
     }
   }
 
-  .chart-placeholder {
+  .no-data {
+    text-align: center;
+    color: #909399;
+    font-size: 14px;
+    padding: 20px;
+  }
+
+  .analysis-placeholder,
+  .advice-placeholder {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    height: 200px;
-    background: #f5f7fa;
-    border-radius: 12px;
-    color: #909399;
+    padding: 40px 20px;
+    text-align: center;
 
-    .el-icon {
-      font-size: 48px;
-      margin-bottom: 12px;
+    .placeholder-icon {
+      color: #c0c4cc;
+      margin-bottom: 16px;
     }
 
-    span {
+    h4 {
+      margin: 0 0 12px 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: #303133;
+    }
+
+    p {
+      margin: 0 0 20px 0;
+      color: #606266;
       font-size: 14px;
+      line-height: 1.5;
     }
   }
 }

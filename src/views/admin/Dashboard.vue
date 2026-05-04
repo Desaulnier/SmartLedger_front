@@ -59,9 +59,9 @@
         <span class="card-title">👥 最近注册用户</span>
       </template>
       <el-table :data="recentUsers" stripe>
-        <el-table-column prop="name" label="用户名" />
+        <el-table-column prop="username" label="用户名" />
         <el-table-column prop="email" label="邮箱" />
-        <el-table-column prop="registerTime" label="注册时间" />
+        <el-table-column prop="createdAt" label="注册时间" />
         <el-table-column label="状态">
           <template #default>
             <el-tag type="success" size="small">正常</el-tag>
@@ -73,21 +73,41 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { getAdminStats } from '@/api/admin'
 
 const overviewCards = ref([
-  { icon: '👥', label: '总用户数', value: '1,234', desc: '本月新增 +56', class: 'user-card' },
-  { icon: '📝', label: '总账单数', value: '45,678', desc: '本月新增 +3,456', class: 'bill-card' },
-  { icon: '💰', label: '总消费金额', value: '¥123,456', desc: '本月 ¥23,456', class: 'amount-card' },
-  { icon: '⚠️', label: '预警次数', value: '567', desc: '本月 +89', class: 'warning-card' }
+  { icon: '👥', label: '总用户数', value: '0', desc: '本月新增 +0', class: 'user-card' },
+  { icon: '📝', label: '总账单数', value: '0', desc: '本月新增 +0', class: 'bill-card' },
+  { icon: '💰', label: '总消费金额', value: '¥0', desc: '本月 ¥0', class: 'amount-card' },
+  { icon: '⚠️', label: '预警次数', value: '0', desc: '本月 +0', class: 'warning-card' }
 ])
 
-const recentUsers = ref([
-  { name: '张三', email: 'zhangsan@edu.cn', registerTime: '2026-04-12 10:30:00' },
-  { name: '李四', email: 'lisi@edu.cn', registerTime: '2026-04-12 09:15:00' },
-  { name: '王五', email: 'wangwu@edu.cn', registerTime: '2026-04-11 18:20:00' },
-  { name: '赵六', email: 'zhaoliu@edu.cn', registerTime: '2026-04-11 15:45:00' }
-])
+const recentUsers = ref([])
+
+const fetchAdminStats = async () => {
+  try {
+    const res = await getAdminStats()
+    if (res.code !== 200) {
+      ElMessage.error(res.message || res.msg || '获取管理员统计失败')
+      return
+    }
+    const data = res.data || {}
+    overviewCards.value[0].value = data.totalUsers != null ? String(data.totalUsers) : '0'
+    overviewCards.value[1].value = data.totalBills != null ? String(data.totalBills) : '0'
+    overviewCards.value[2].value = `¥${data.totalExpense != null ? data.totalExpense : '0'}`
+    overviewCards.value[3].value = data.warningCount != null ? String(data.warningCount) : '0'
+    recentUsers.value = data.recentUsers || []
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('获取管理员统计失败')
+  }
+}
+
+onMounted(() => {
+  fetchAdminStats()
+})
 </script>
 
 <style scoped lang="scss">

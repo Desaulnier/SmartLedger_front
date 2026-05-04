@@ -1,0 +1,1 @@
+import{r as e}from"./request-7c47ff2c.js";function r(){return e({url:"/budget/info",method:"get"})}function n(t){return e({url:"/budget/allowance",method:"put",data:t})}function o(t){return e({url:"/budget",method:"put",data:t})}export{o as a,r as g,n as u};

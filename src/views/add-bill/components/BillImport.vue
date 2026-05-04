@@ -103,7 +103,8 @@ const handleConfirmImport = async () => {
       return
     }
 
-    ElMessage.success('导入成功')
+    window.dispatchEvent(new Event('warning-count-refresh'))
+ElMessage.success('导入成功')
     importRecordId.value = null
     importFile.value = null
     previewData.value = []

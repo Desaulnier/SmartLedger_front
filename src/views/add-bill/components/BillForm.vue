@@ -55,7 +55,8 @@ const handleSubmit = async () => {
       return
     }
 
-    ElMessage.success('记账成功')
+    window.dispatchEvent(new Event('warning-count-refresh'))
+ElMessage.success('记账成功')
     emit('update:modelValue', {
       amount: 0,
       categoryId: null,

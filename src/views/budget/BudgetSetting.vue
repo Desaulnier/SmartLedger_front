@@ -243,43 +243,16 @@
             </div>
             <div class="week-info">
               <span>剩余：</span>
-              <strong class="remaining">¥{{ Math.max(0, week.budget - week.spent) }}</strong>
+              <strong class="remaining">¥{{ week.remaining.toFixed(2) }}</strong>
             </div>
           </div>
           <el-progress
-            :percentage="Math.min(100, Math.round((week.spent / week.budget) * 100))"
-            :color="week.spent > week.budget ? '#f56c6c' : '#67c23a'"
-            :stroke-width="8"
-            :show-text="false"
-          />
+  :percentage="getWeekProgress(week)"
+  :color="week.spent > week.budget ? '#f56c6c' : '#67c23a'"
+  :stroke-width="8"
+  :show-text="false"
+/>
         </div>
-      </div>
-    </el-card>
-
-    <!-- 分类预算设置（占位） -->
-    <el-card class="category-budget-card fade-in-up" shadow="hover">
-      <template #header>
-        <div class="card-header">
-          <span class="card-title">📊 分类预算设置</span>
-          <span class="card-tip">细分各类别预算，更精准控制消费（可选）</span>
-        </div>
-      </template>
-
-      <!-- TODO [后端接口]: POST /api/budget/category -->
-      <!-- <el-alert type="info" :closable="false" class="todo-alert">
-        <template #default>
-          <strong>TODO [后端接口]</strong><br>
-          POST /api/budget/category - 设置分类预算<br>
-          GET /api/budget/category - 获取分类预算列表
-        </template>
-      </el-alert> -->
-
-      <div class="empty-placeholder">
-        <div class="empty-icon-wrapper">
-          <el-icon class="empty-icon bounce"><Wallet /></el-icon>
-        </div>
-        <p class="empty-text">分类预算功能开发中...</p>
-        <p class="empty-hint">需要先实现后端接口</p>
       </div>
     </el-card>
   </div>
@@ -289,18 +262,81 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Wallet, Clock, Check, Warning } from '@element-plus/icons-vue'
+import { getBudgetInfo, updateAllowance, updateBudget } from '@/api/budget'
+
+const splitWeeklyBudgets = (totalBudget) => {
+  const total = Number(totalBudget || 0)
+  if (total <= 0) return [0, 0, 0, 0]
+
+  const base = Math.floor((total / 4) * 100) / 100
+  const result = [base, base, base]
+  const last = Number((total - base * 3).toFixed(2))
+  result.push(last)
+
+  return result.map(item => Number(item.toFixed(2)))
+}
+
+const weeklyBreakdown = computed(() => {
+  const totalBudget = Number(overviewInfo.value.monthlyBudget || 0)
+  const totalSpent = Number(overviewInfo.value.currentSpent || 0)
+
+  const budgets = splitWeeklyBudgets(totalBudget)
+
+  const now = new Date()
+  const currentWeekIndex = Math.min(3, Math.floor((now.getDate() - 1) / 7))
+  const passedWeeks = currentWeekIndex + 1
+
+  const avgSpent = passedWeeks > 0 ? totalSpent / passedWeeks : 0
+
+  return budgets.map((budget, index) => {
+    let status = 'upcoming'
+    if (index < currentWeekIndex) status = 'completed'
+    if (index === currentWeekIndex) status = 'current'
+
+    const spent = index <= currentWeekIndex ? Number(avgSpent.toFixed(2)) : 0
+    const remaining = Math.max(0, Number((budget - spent).toFixed(2)))
+
+    return {
+      week: `第 ${index + 1} 周`,
+      budget: Number(budget.toFixed(2)),
+      spent,
+      remaining,
+      status
+    }
+  })
+})
+
+const getWeekProgress = (week) => {
+  const budget = Number(week.budget || 0)
+  const spent = Number(week.spent || 0)
+
+  if (budget <= 0) return 0
+  return Math.min(100, Math.round((spent / budget) * 100))
+}
+
+const getWeekTagType = (status) => {
+  if (status === 'completed') return 'success'
+  if (status === 'current') return 'warning'
+  return 'info'
+}
+
+const getWeekStatusText = (status) => {
+  if (status === 'completed') return '已完成'
+  if (status === 'current') return '进行中'
+  return '未开始'
+}
 
 // 本月概况数据
 const overviewInfo = ref({
-  monthlyAllowance: 2000,
-  monthlyBudget: 1800,
-  currentSpent: 1250,
-  budgetRemaining: 550,
-  remainingDays: 15,
-  dailyBudget: 36.67,
-  emergencyFund: 200,       // 应急资金
-  weeklyBudget: 450,        // 周预算
-  currentWeek: 2            // 当前第几周
+  monthlyAllowance: 0,
+  monthlyBudget: 0,
+  currentSpent: 0,
+  budgetRemaining: 0,
+  remainingDays: 0,
+  dailyBudget: 0,
+  emergencyFund: 0,
+  dailySurvivalCost: 0,
+  warningThreshold: 80
 })
 
 // 概况卡片配置
@@ -312,34 +348,23 @@ const overviewItems = computed(() => [
   { icon: '📅', label: '每日可用', value: overviewInfo.value.dailyBudget, desc: `剩余 ${overviewInfo.value.remainingDays} 天` }
 ])
 
-// 周预算拆解（按 4 周平均分配）
-const weeklyBreakdown = computed(() => {
-  const total = overviewInfo.value.monthlyBudget
-  const weekly = Math.round(total / 4)
-  return [
-    { week: '第 1 周', budget: weekly, spent: 380, status: 'completed' },
-    { week: '第 2 周', budget: weekly, spent: 420, status: 'current' },
-    { week: '第 3 周', budget: weekly, spent: 0, status: 'upcoming' },
-    { week: '第 4 周', budget: weekly, spent: 0, status: 'upcoming' }
-  ]
-})
-
 // 生活费表单
 const allowanceForm = ref({
-  monthlyAllowance: 2000,
-  dailySurvivalCost: 30,
-  emergencyFund: 200        // 新增：应急资金
+  monthlyAllowance: 0,
+  dailySurvivalCost: 0,
+  emergencyFund: 0
 })
 
 // 预算表单
 const budgetForm = ref({
-  monthlyBudget: 1800,
+  monthlyBudget: 0,
   warningThreshold: 80
 })
 
 // 保存状态
 const savingAllowance = ref(false)
 const savingBudget = ref(false)
+const loading = ref(false)
 
 // 预算使用百分比
 const budgetUsagePercent = computed(() => {
@@ -372,18 +397,17 @@ const statusText = computed(() => {
   return '正常'
 })
 
-// 获取周状态标签类型
-const getWeekTagType = (status) => {
-  if (status === 'completed') return 'success'
-  if (status === 'current') return 'warning'
-  return 'info'
-}
 
-// 获取周状态文本
-const getWeekStatusText = (status) => {
-  if (status === 'completed') return '已完成'
-  if (status === 'current') return '进行中'
-  return '未开始'
+// 计算当前月份剩余天数
+const calculateRemainingDays = () => {
+  const now = new Date()
+  const currentDay = now.getDate()
+  const currentMonth = now.getMonth() + 1
+  const currentYear = now.getFullYear()
+  
+  // 获取当前月份的天数
+  const daysInMonth = new Date(currentYear, currentMonth, 0).getDate()
+  return Math.max(0, daysInMonth - currentDay + 1) // +1 因为包含今天
 }
 
 onMounted(() => {
@@ -392,25 +416,42 @@ onMounted(() => {
 })
 
 // 加载预算信息
-const loadBudgetInfo = () => {
-  // TODO [后端接口]: GET /api/budget/info
-  overviewInfo.value = {
-    monthlyAllowance: 2000,
-    monthlyBudget: 1800,
-    currentSpent: 1250,
-    budgetRemaining: 550,
-    remainingDays: 15,
-    dailyBudget: 36.67
-  }
-  
-  allowanceForm.value = {
-    monthlyAllowance: 2000,
-    dailySurvivalCost: 30
-  }
-  
-  budgetForm.value = {
-    monthlyBudget: 1800,
-    warningThreshold: 80
+const loadBudgetInfo = async () => {
+  loading.value = true
+  try {
+    const response = await getBudgetInfo()
+    const data = response.data
+
+    // 更新概况信息 - 所有数据都从后端获取
+    overviewInfo.value = {
+      monthlyAllowance: parseFloat(data.monthlyAllowance) || 0,
+      monthlyBudget: parseFloat(data.monthlyBudget) || 0,
+      currentSpent: parseFloat(data.currentSpent) || 0,
+      budgetRemaining: parseFloat(data.budgetRemaining) || 0,
+      remainingDays: calculateRemainingDays(), // 使用前端计算的剩余天数
+      dailyBudget: parseFloat(data.dailyBudget) || 0,
+      emergencyFund: parseFloat(data.emergencyFund) || 0,
+      dailySurvivalCost: parseFloat(data.dailySurvivalCost) || 0,
+      warningThreshold: parseInt(data.warningThreshold) || 80
+    }
+
+    // 更新表单 - 所有数据都从后端获取
+    allowanceForm.value = {
+      monthlyAllowance: parseFloat(data.monthlyAllowance) || 0,
+      dailySurvivalCost: parseFloat(data.dailySurvivalCost) || 0,
+      emergencyFund: parseFloat(data.emergencyFund) || 0
+    }
+
+    budgetForm.value = {
+      monthlyBudget: parseFloat(data.monthlyBudget) || 0,
+      warningThreshold: parseInt(data.warningThreshold) || 80
+    }
+  } catch (error) {
+    console.error('加载预算信息失败:', error)
+    ElMessage.error('加载预算信息失败，请检查网络连接')
+    // 保持默认值，不重置
+  } finally {
+    loading.value = false
   }
 }
 
@@ -446,11 +487,11 @@ const handleSaveAllowance = async () => {
   savingAllowance.value = true
   
   try {
-    // TODO [后端接口]: PUT /api/budget/allowance
-    await new Promise(resolve => setTimeout(resolve, 500))
+    await updateAllowance(allowanceForm.value)
     ElMessage.success('生活费设置已保存')
-    loadBudgetInfo()
+    await loadBudgetInfo()
   } catch (error) {
+    console.error('保存生活费设置失败:', error)
     ElMessage.error('保存失败，请重试')
   } finally {
     savingAllowance.value = false
@@ -465,17 +506,18 @@ const handleSaveBudget = async () => {
   }
 
   if (budgetForm.value.monthlyBudget > allowanceForm.value.monthlyAllowance && allowanceForm.value.monthlyAllowance > 0) {
-    ElMessage.warning('预算超过了生活费，确定要保存吗？')
+    ElMessage.warning('预算超过了生活费，建议调整')
   }
 
   savingBudget.value = true
   
   try {
-    // TODO [后端接口]: PUT /api/budget
-    await new Promise(resolve => setTimeout(resolve, 500))
+    await updateBudget(budgetForm.value)
+    window.dispatchEvent(new Event('warning-count-refresh'))
     ElMessage.success('预算设置已保存')
-    loadBudgetInfo()
+    await loadBudgetInfo()
   } catch (error) {
+    console.error('保存预算设置失败:', error)
     ElMessage.error('保存失败，请重试')
   } finally {
     savingBudget.value = false

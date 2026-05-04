@@ -26,3 +26,7 @@ export function deleteBill(id) {
 export function confirmImport(data) {
   return request.post('/bills/confirm-import', data)
 }
+
+export function getAbnormalBillList(params) {
+  return request.get('/bills/abnormal', { params })
+}

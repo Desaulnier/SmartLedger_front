@@ -99,7 +99,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import request from '@/utils/request'
+import { getAdminUsers, updateAdminUserStatus, deleteAdminUser } from '@/api/admin'
 
 const loading = ref(false)
 const userList = ref([])
@@ -159,7 +159,7 @@ const fetchUserList = async () => {
       role: searchForm.value.role || undefined
     }
 
-    const res = await request.get('/users/admin/list', { params })
+    const res = await getAdminUsers(params)
     if (res.code !== 200) {
       ElMessage.error(res.message || res.msg || '获取用户列表失败')
       return
@@ -191,8 +191,23 @@ const handleReset = () => {
   fetchUserList()
 }
 
-const handleStatusChange = (row) => {
-  ElMessage.info(`修改用户状态接口待实现：用户 ID ${row.id}`)
+const handleStatusChange = async (row) => {
+  const nextStatus = row.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'
+  loading.value = true
+  try {
+    const res = await updateAdminUserStatus(row.id, { status: nextStatus })
+    if (res.code !== 200) {
+      ElMessage.error(res.message || res.msg || '更新用户状态失败')
+      return
+    }
+    ElMessage.success('用户状态更新成功')
+    fetchUserList()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('更新用户状态失败，请稍后重试')
+  } finally {
+    loading.value = false
+  }
 }
 
 const handleDelete = async (row) => {
@@ -207,7 +222,13 @@ const handleDelete = async (row) => {
       }
     )
 
-    ElMessage.info(`删除用户接口待实现：用户 ID ${row.id}`)
+    const res = await deleteAdminUser(row.id)
+    if (res.code !== 200) {
+      ElMessage.error(res.message || res.msg || '删除用户失败')
+      return
+    }
+    ElMessage.success('删除用户成功')
+    fetchUserList()
   } catch (error) {
     if (error !== 'cancel') {
       console.error(error)

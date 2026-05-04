@@ -107,6 +107,74 @@
           </div>
         </el-card>
 
+        <el-card class="health-card fade-in-up" shadow="hover">
+  <template #header>
+    <div class="card-header">
+      <span class="card-title">🧠 智能消费检测</span>
+      <el-tag size="small" type="danger" effect="light">
+        发现 {{ anomalySummary.abnormalCount }} 笔异常消费
+      </el-tag>
+    </div>
+  </template>
+
+  <div class="smart-hints">
+    <div
+      v-for="(item, index) in smartDetectHints"
+      :key="index"
+      class="mini-hint"
+    >
+      <div class="mini-hint-icon">{{ item.icon }}</div>
+      <div class="mini-hint-content">
+        <div class="mini-hint-title">{{ item.title }}</div>
+        <div class="mini-hint-text">{{ item.content }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="detect-overview">
+    <div class="score-ring" :class="anomalyScoreClass">
+      <span class="score-num">{{ detectionScore }}</span>
+      <span class="score-text">稳定分</span>
+    </div>
+
+    <div class="overview-text">
+      <strong>{{ anomalySummary.levelText }}</strong>
+      <p>{{ anomalySummary.desc }}</p>
+    </div>
+  </div>
+
+  <div class="abnormal-list" v-if="abnormalBills.length">
+    <div
+      class="abnormal-item"
+      v-for="item in abnormalBills.slice(0, 3)"
+      :key="item.id"
+      :class="getAbnormalItemClass(item)"
+    >
+      <div class="abnormal-left">
+        <span class="abnormal-dot"></span>
+        <div class="abnormal-info">
+          <div class="abnormal-title">
+            {{ getAnomalyTypeText(item.anomalyType) }}
+          </div>
+          <div class="abnormal-reason">
+            {{ item.anomalyReason || '该笔消费与历史模式存在偏离' }}
+          </div>
+          <div class="abnormal-time">{{ formatRecordTime(item.occurTime || item.createdAt) }}</div>
+        </div>
+      </div>
+
+      <div class="abnormal-right">
+        <div class="abnormal-amount">¥{{ formatMoney(item.amount) }}</div>
+        <div class="abnormal-score">评分 {{ formatMoney(item.anomalyScore) }}</div>
+      </div>
+    </div>
+  </div>
+
+  <div v-else class="empty-anomaly">
+    本月暂无明显异常消费记录
+  </div>
+</el-card>
+
         <!-- 预警规则说明（紧凑版） -->
         <el-card class="rules-card fade-in-up" shadow="hover">
           <template #header>
@@ -172,95 +240,268 @@
             </div>
           </div>
         </el-card>
+        <!-- 预警记录 -->
+<el-card class="records-card fade-in-up" shadow="hover">
+  <template #header>
+    <div class="card-header">
+      <span class="card-title">📝 预警记录</span>
+      <el-button text size="small" @click="loadWarningRecords">
+        <el-icon><Refresh /></el-icon>
+      </el-button>
+    </div>
+  </template>
 
-        <!-- 预警记录（紧凑列表） -->
-        <el-card class="records-card fade-in-up" shadow="hover">
-          <template #header>
-            <div class="card-header">
-              <span class="card-title">📝 预警记录</span>
-              <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99">
-                <el-button text size="small" @click="loadWarningRecords">
-                  <el-icon><Refresh /></el-icon>
-                </el-button>
-              </el-badge>
-            </div>
-          </template>
+  <div v-loading="loadingRecords">
+    <div v-if="warningRecords.length" class="records-list-pretty">
+      <div
+        v-for="item in warningRecords"
+        :key="item.id"
+        class="record-pretty-item"
+        :class="getRecordClass(item)"
+      >
+        <span class="record-dot" :class="getRecordClass(item)"></span>
 
-          <!-- TODO [后端接口]: POST /api/warning/check -->
-          <!-- <el-alert type="info" :closable="false" class="todo-alert-compact">
-            <template #default>
-              <strong>TODO [后端接口]</strong> POST /api/warning/check · GET /api/warning/records
-            </template>
-          </el-alert> -->
+        <div class="record-main">
+          <div class="record-title">{{ getRecordTitle(item) }}</div>
+          <div class="record-time">{{ formatRecordTime(item.createdAt) }}</div>
+        </div>
 
-          <div class="records-list-compact">
-            <div class="record-item" v-for="(record, i) in mockRecords" :key="i" :class="record.type">
-              <span class="record-icon">{{ record.icon }}</span>
-              <div class="record-content">
-                <div class="record-title">{{ record.title }}</div>
-                <div class="record-time">{{ record.time }}</div>
-              </div>
-              <el-tag :type="record.type" size="small">{{ record.tag }}</el-tag>
-            </div>
-          </div>
-        </el-card>
+        <span class="record-pill" :class="getRecordClass(item)">
+          {{ getRecordTagText(item) }}
+        </span>
+      </div>
+    </div>
+
+    <div v-else class="records-empty">
+      <el-empty description="暂无可显示的预警记录">
+        <template #footer>
+          <el-button type="primary" size="small" @click="loadWarningRecords">刷新</el-button>
+        </template>
+      </el-empty>
+      <p class="hint-text">当前还没有触发新的消费预警记录。</p>
+    </div>
+  </div>
+</el-card>
+
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, TrendCharts } from '@element-plus/icons-vue'
+import { Refresh } from '@element-plus/icons-vue'
+import { getBudgetInfo } from '@/api/budget'
+import { getAbnormalBillList } from '@/api/bill'
+import {
+  getBudgetWarning,
+  checkConsumptionWarning,
+  getWarningRecords,
+  markAllWarningsAsRead
+} from '@/api/warning'
 
-// 核心数据
-const statusInfo = ref({
-  monthlyAllowance: 2000,
-  monthlyBudget: 1800,
-  currentSpent: 1450,
-  remainingDays: 10,
-  dailyBudget: 35,
-  nonEssentialRatio: 0.35
+const warningRecords = ref([])
+const loadingRecords = ref(false)
+
+const abnormalBills = ref([])
+
+const anomalySummary = computed(() => {
+  if (!abnormalBills.value.length) {
+    return {
+      abnormalCount: 0,
+      avgScore: 0,
+      maxScore: 0,
+      levelText: '本月消费稳定度较好',
+      desc: '当前没有检测到明显异常消费行为，整体消费模式较稳定。'
+    }
+  }
+
+  const scores = abnormalBills.value.map(item => Number(item.anomalyScore || 0))
+  const avgScore = scores.reduce((sum, score) => sum + score, 0) / scores.length
+  const maxScore = Math.max(...scores)
+
+  let levelText = '本月消费稳定度：一般'
+  let desc = '检测到少量异常消费，主要可能表现为金额波动或时段异常。'
+
+  if (maxScore >= 0.85 || abnormalBills.value.length >= 4) {
+    levelText = '本月消费稳定度：偏低'
+    desc = '异常消费较为集中，建议优先关注高金额或非常规时段支出。'
+  } else if (avgScore < 0.45) {
+    levelText = '本月消费稳定度：良好'
+    desc = '虽然存在轻微异常波动，但整体消费节奏仍然比较稳定。'
+  }
+
+  return {
+    abnormalCount: abnormalBills.value.length,
+    avgScore,
+    maxScore,
+    levelText,
+    desc
+  }
 })
 
-// 消费前检查表单
-const checkForm = ref({ amount: 0, categoryId: null })
+const detectionScore = computed(() => {
+  if (!abnormalBills.value.length) return 92
+  const score = 100 - anomalySummary.value.avgScore * 35 - anomalySummary.value.abnormalCount * 6
+  return Math.max(45, Math.min(95, Math.round(score)))
+})
+
+const anomalyScoreClass = computed(() => {
+  if (detectionScore.value >= 80) return 'good'
+  if (detectionScore.value >= 60) return 'warn'
+  return 'danger'
+})
+
+const smartDetectHints = computed(() => {
+  const list = abnormalBills.value
+  const amountCount = list.filter(item => item.anomalyType === 'AMOUNT_ABNORMAL').length
+  const timeCount = list.filter(item => item.anomalyType === 'TIME_ABNORMAL').length
+  const behaviorCount = list.filter(item =>
+    item.anomalyType === 'BEHAVIOR_ABNORMAL' || item.anomalyType === 'COMPOSITE_ABNORMAL'
+  ).length
+
+  return [
+    {
+      icon: '📊',
+      title: '金额波动分析',
+      content: amountCount > 0
+        ? `检测到 ${amountCount} 笔金额明显偏高消费，建议关注大额支出。`
+        : '本月暂未发现明显金额异常消费。'
+    },
+    {
+      icon: '⏰',
+      title: '时段消费分析',
+      content: timeCount > 0
+        ? `发现 ${timeCount} 笔非常规时段消费，作息相关支出有波动。`
+        : '夜间消费较少，消费时段整体稳定。'
+    },
+    {
+      icon: '🧾',
+      title: '行为偏离提醒',
+      content: behaviorCount > 0
+        ? `存在 ${behaviorCount} 笔偏离历史模式的消费记录，建议复查。`
+        : '当前消费行为与历史习惯基本一致。'
+    }
+  ]
+})
+
+const getAnomalyTypeText = (type) => {
+  if (type === 'AMOUNT_ABNORMAL') return '高金额异常'
+  if (type === 'TIME_ABNORMAL') return '异常时段消费'
+  if (type === 'COMPOSITE_ABNORMAL') return '复合异常消费'
+  if (type === 'BEHAVIOR_ABNORMAL') return '行为偏离消费'
+  return '异常消费'
+}
+const loadAbnormalBills = async () => {
+  try {
+    const res = await getAbnormalBillList({
+      pageNum: 1,
+      pageSize: 6
+    })
+
+    if (!res || res.code !== 200) {
+      abnormalBills.value = []
+      return
+    }
+
+    abnormalBills.value = res.data?.records || []
+  } catch (error) {
+    console.error(error)
+    abnormalBills.value = []
+  }
+}
+const getAbnormalItemClass = (item) => {
+  const score = Number(item.anomalyScore || 0)
+  if (score >= 0.85) return 'danger'
+  return 'warning'
+}
+
+const statusInfo = ref({
+  monthlyAllowance: 0,
+  monthlyBudget: 0,
+  currentSpent: 0,
+  remainingDays: 0,
+  dailyBudget: 0,
+  nonEssentialRatio: 0.2,
+  warningThreshold: 80
+})
+
+const checkForm = ref({
+  amount: null,
+  categoryId: null
+})
 const checking = ref(false)
 const checkResult = ref(null)
-const unreadCount = ref(2)
 
-// 支出分类
 const expenseCategories = ref([
-  { id: 1, name: '食堂就餐', icon: '🍜', attribute: 1 },
-  { id: 2, name: '水费电费', icon: '⚡', attribute: 1 },
+  { id: 1, name: '食堂就餐', icon: '🍚', attribute: 1 },
+  { id: 2, name: '水电网费', icon: '💡', attribute: 1 },
   { id: 3, name: '话费流量', icon: '📱', attribute: 1 },
   { id: 4, name: '医疗药品', icon: '💊', attribute: 1 },
-  { id: 5, name: '校车/通勤', icon: '🚌', attribute: 1 },
-  { id: 6, name: '考研资料', icon: '📚', attribute: 1 },
-  { id: 7, name: '水果零食', icon: '🍎', attribute: 2 },
-  { id: 8, name: '服饰鞋包', icon: '👕', attribute: 2 },
-  { id: 9, name: '图书购买', icon: '📖', attribute: 2 },
-  { id: 10, name: '电影/展会', icon: '🎬', attribute: 2 },
-  { id: 11, name: '奶茶咖啡', icon: '🥤', attribute: 3 },
-  { id: 12, name: '游戏氪金', icon: '🎮', attribute: 3 },
-  { id: 13, name: '盲盒手办', icon: '🧸', attribute: 3 },
-  { id: 14, name: '追星/周边', icon: '🌟', attribute: 3 }
+  { id: 5, name: '交通通勤', icon: '🚌', attribute: 1 },
+  { id: 6, name: '学习资料', icon: '📘', attribute: 1 },
+  { id: 7, name: '水果零食', icon: '🍓', attribute: 2 },
+  { id: 8, name: '服饰鞋包', icon: '🧥', attribute: 2 },
+  { id: 9, name: '图书购买', icon: '📚', attribute: 2 },
+  { id: 10, name: '电影娱乐', icon: '🎬', attribute: 2 },
+  { id: 11, name: '奶茶咖啡', icon: '🧋', attribute: 3 },
+  { id: 12, name: '游戏充值', icon: '🎮', attribute: 3 },
+  { id: 13, name: '盲盒手办', icon: '🎁', attribute: 3 },
+  { id: 14, name: '追星周边', icon: '🎀', attribute: 3 }
 ])
 
-// 模拟预警记录
-const mockRecords = ref([
-  { icon: '🟡', title: '预算使用达 80%', time: '今天 14:30', type: 'warning', tag: '阈值预警' },
-  { icon: '🔴', title: '欲望消费占比过高', time: '昨天 09:15', type: 'danger', tag: '占比预警' },
-  { icon: '🟡', title: '单笔大额消费提醒', time: '昨天 18:20', type: 'warning', tag: '大额预警' }
-])
+const detectDims = ref(['预算消耗', '非必要开支', '日均支出', '超支风险'])
 
-// 核心卡片数据（紧凑版）
+const formatMoney = (value) => {
+  const num = Number(value || 0)
+  return Number.isNaN(num) ? '0.00' : num.toFixed(2)
+}
+
+const getAttributeType = (attr) => {
+  if (attr === 1) return 'success'
+  if (attr === 2) return 'warning'
+  return 'danger'
+}
+
+const getAttributeName = (attr) => {
+  if (attr === 1) return '必要'
+  if (attr === 2) return '改善'
+  return '欲望'
+}
+
+const buildCheckDetails = (data) => [
+  { label: '当前剩余预算', value: `¥${formatMoney(data.remainingBudget)}` },
+  { label: '消费后预算结余', value: `¥${formatMoney(data.afterSpend)}` },
+  { label: '当前日均可用', value: `¥${formatMoney(data.dailyBudget)}` },
+  { label: '消费属性', value: getAttributeName(data.attribute) }
+]
+
 const coreCards = computed(() => [
-  { icon: '💰', label: '生活费', value: `¥${statusInfo.value.monthlyAllowance}`, desc: '家长给的' },
-  { icon: '📉', label: '已消费', value: `¥${statusInfo.value.currentSpent}`, desc: `占预算 ${budgetUsage.value}%` },
-  { icon: '📅', label: '剩余', value: `${statusInfo.value.remainingDays} 天`, desc: `每日 ¥${statusInfo.value.dailyBudget}` },
-  { icon: '🎮', label: '欲望占比', value: `${(statusInfo.value.nonEssentialRatio * 100).toFixed(0)}%`, desc: '建议 ≤ 20%' }
+  {
+    icon: '💰',
+    label: '月生活费',
+    value: `¥${formatMoney(statusInfo.value.monthlyAllowance)}`,
+    desc: '家长提供'
+  },
+  {
+    icon: '📊',
+    label: '已消费',
+    value: `¥${formatMoney(statusInfo.value.currentSpent)}`,
+    desc: `占预算 ${budgetUsage.value}%`
+  },
+  {
+    icon: '⏳',
+    label: '剩余天数',
+    value: `${statusInfo.value.remainingDays} 天`,
+    desc: `日均 ¥${formatMoney(statusInfo.value.dailyBudget)}`
+  },
+  {
+    icon: '🎯',
+    label: '欲望占比',
+    value: `${(statusInfo.value.nonEssentialRatio * 100).toFixed(0)}%`,
+    desc: '建议 ≤ 20%'
+  }
 ])
 
 const budgetUsage = computed(() => {
@@ -268,15 +509,29 @@ const budgetUsage = computed(() => {
   return Math.round((statusInfo.value.currentSpent / statusInfo.value.monthlyBudget) * 100)
 })
 
-const budgetUsed = computed(() => statusInfo.value.currentSpent)
-const monthlyBudget = computed(() => statusInfo.value.monthlyBudget)
+const healthScore = computed(() => {
+  const usage = budgetUsage.value
+  const nonEssentialPenalty = Math.round((statusInfo.value.nonEssentialRatio || 0) * 35)
+  const score = 100 - usage - nonEssentialPenalty
+  return Math.max(30, Math.min(100, score))
+})
 
-const overForecast = computed(() => {
-  const daysPassed = 30 - statusInfo.value.remainingDays
-  if (daysPassed <= 0) return 0
-  const dailyAvg = statusInfo.value.currentSpent / daysPassed
-  const forecastMonth = dailyAvg * 30
-  return Math.max(0, Math.round(forecastMonth - statusInfo.value.monthlyBudget))
+const healthScoreClass = computed(() => {
+  if (healthScore.value >= 75) return 'good'
+  if (healthScore.value >= 55) return 'warn'
+  return 'danger'
+})
+
+const healthLevel = computed(() => {
+  if (healthScore.value >= 75) return '当前消费较健康'
+  if (healthScore.value >= 55) return '消费需要留意'
+  return '存在超支风险'
+})
+
+const healthDesc = computed(() => {
+  if (healthScore.value >= 75) return '本月预算使用平稳，建议继续保持合理节奏。'
+  if (healthScore.value >= 55) return '预算消耗偏快，减少非必要支出会更稳。'
+  return '预算压力较大，建议优先保留必要支出。'
 })
 
 const progressGradient = computed(() => {
@@ -285,6 +540,18 @@ const progressGradient = computed(() => {
   if (usage >= 80) return 'linear-gradient(90deg, #e6a23c, #f56c6c)'
   if (usage >= 60) return 'linear-gradient(90deg, #409eff, #e6a23c)'
   return 'linear-gradient(90deg, #67c23a, #409eff)'
+})
+
+const overForecast = computed(() => {
+  const now = new Date()
+  const currentDay = now.getDate()
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+
+  if (currentDay <= 1 || !statusInfo.value.currentSpent) return 0
+
+  const dailyAvg = statusInfo.value.currentSpent / (currentDay - 1)
+  const forecastMonth = dailyAvg * daysInMonth
+  return Math.max(0, Math.round(forecastMonth - statusInfo.value.monthlyBudget))
 })
 
 const statusTagType = computed(() => {
@@ -301,104 +568,307 @@ const statusText = computed(() => {
   return '🟢 正常'
 })
 
-const getAttributeType = (attr) => attr === 1 ? 'success' : attr === 2 ? 'warning' : 'danger'
-const getAttributeName = (attr) => attr === 1 ? '必需' : attr === 2 ? '改善' : '欲望'
+const formatRecordTime = (value) => {
+  if (!value) return ''
 
-onMounted(() => { loadStatusInfo() })
+  const date = new Date(String(value).replace(' ', 'T'))
+  if (Number.isNaN(date.getTime())) return value
 
-const loadStatusInfo = () => {
-  // TODO [后端接口]: GET /api/budget/status
-  statusInfo.value = { monthlyAllowance: 2000, monthlyBudget: 1800, currentSpent: 1450, remainingDays: 10, dailyBudget: 35, nonEssentialRatio: 0.35 }
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const targetDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const diffDays = Math.round((today - targetDay) / (24 * 60 * 60 * 1000))
+
+  const timeText = date.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  })
+
+  if (diffDays === 0) return `今天 ${timeText}`
+  if (diffDays === 1) return `昨天 ${timeText}`
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${timeText}`
 }
 
-// 消费前预警检查（核心功能）
+const getRecordClass = (item) => {
+  return item.warningType === 'RED' ? 'danger' : 'warning'
+}
+
+const getRecordTagText = (item) => {
+  const msg = item.warningMsg || ''
+
+  if (item.warningType === 'ANOMALY') return '异常预警'
+  if (msg.includes('预算超支')) return '超支预警'
+  if (msg.includes('阈值')) return '阈值预警'
+
+  return '预算预警'
+}
+const getRecordTitle = (item) => {
+  const msg = item.warningMsg || ''
+
+  if (item.warningType === 'ANOMALY') {
+    return msg.length > 18 ? `${msg.slice(0, 18)}...` : msg
+  }
+  if (item.warningType === 'YELLOW' && item.thresholdSnapshot != null) {
+  return `预算使用达 ${item.thresholdSnapshot}%`
+}
+  if (msg.includes('预算超支')) return '预算超支预警'
+  if (msg.includes('阈值')) return '预算阈值预警'
+
+  return msg.length > 18 ? `${msg.slice(0, 18)}...` : msg
+}
+
+watch(
+  () => [checkForm.value.amount, checkForm.value.categoryId],
+  () => {
+    checkResult.value = null
+  }
+)
+
+onMounted(async () => {
+  await Promise.all([loadStatusInfo(), loadWarningRecords(), loadAbnormalBills()])
+  await handleReadAllWarnings()
+})
+
+const loadStatusInfo = async () => {
+  try {
+    const [budgetRes, warningRes] = await Promise.all([
+      getBudgetInfo(),
+      getBudgetWarning()
+    ])
+
+    if (budgetRes?.code === 200 && budgetRes.data) {
+      statusInfo.value = {
+  monthlyAllowance: parseFloat(budgetRes.data.monthlyAllowance) || 0,
+  monthlyBudget: parseFloat(budgetRes.data.monthlyBudget) || 0,
+  currentSpent: parseFloat(budgetRes.data.currentSpent) || 0,
+  remainingDays: budgetRes.data.remainingDays ?? 0,
+  dailyBudget: parseFloat(budgetRes.data.dailyBudget) || 0,
+  nonEssentialRatio: 0.2,
+  warningThreshold: parseInt(budgetRes.data.warningThreshold) || 80
+}
+    } else {
+      ElMessage.warning(budgetRes?.message || '获取预算信息失败')
+    }
+
+    if (warningRes?.code === 200 && warningRes.data) {
+      const warningData = warningRes.data
+      if (warningData.warningLevel === 'RED') {
+        statusInfo.value.nonEssentialRatio = 0.35
+      } else if (warningData.warningLevel === 'YELLOW') {
+        statusInfo.value.nonEssentialRatio = 0.25
+      } else {
+        statusInfo.value.nonEssentialRatio = 0.15
+      }
+    }
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('获取预警中心数据失败，请稍后重试')
+  }
+}
+
 const checkPreWarning = async () => {
-  if (!checkForm.value.amount || checkForm.value.amount <= 0) {
+  if (!checkForm.value.amount || Number(checkForm.value.amount) <= 0) {
     ElMessage.warning('请输入消费金额')
     return
   }
+
   if (!checkForm.value.categoryId) {
     ElMessage.warning('请选择消费分类')
     return
   }
 
-  checking.value = true
-  await new Promise(resolve => setTimeout(resolve, 600))
-
-  const category = expenseCategories.value.find(c => c.id === checkForm.value.categoryId)
+  const category = expenseCategories.value.find(item => item.id === checkForm.value.categoryId)
   const attribute = category?.attribute || 1
-  const attributeName = getAttributeName(attribute)
-  const remaining = statusInfo.value.monthlyBudget - statusInfo.value.currentSpent
-  const afterSpend = remaining - checkForm.value.amount
-  const dailyBudget = statusInfo.value.dailyBudget
 
-  let result = {}
+  checking.value = true
+  try {
+    const res = await checkConsumptionWarning({
+      amount: checkForm.value.amount,
+      attribute
+    })
 
-  if (afterSpend < 0) {
-    result = {
-      level: 'danger', icon: '🚫', title: '不建议消费', levelText: '红灯 - 超支风险',
-      reason: `这笔消费将导致预算超支 ¥${Math.abs(afterSpend).toFixed(2)}！`,
-      suggestion: attribute === 1 ? '虽是必需，但预算已不足。建议确认是否紧急必需。' : '强烈建议放弃！等下月生活费再说。',
-      details: [
-        { label: '消费属性', value: attributeName },
-        { label: '剩余预算', value: `¥${remaining.toFixed(2)}` },
-        { label: '消费后余额', value: `¥${afterSpend.toFixed(2)}` }
-      ]
+    if (!res || res.code !== 200 || !res.data) {
+      ElMessage.error(res?.message || '检查失败')
+      return
     }
-  } else if (budgetUsage.value >= 80 && attribute >= 2) {
-    result = {
-      level: 'warning', icon: '⚠️', title: '谨慎消费', levelText: '黄灯 - 预警期',
-      reason: `预算已达 ${budgetUsage.value}%，这笔${attributeName}消费会进一步压缩后续额度。`,
-      suggestion: '建议三思：是否真的必要？能否等到下月？',
-      details: [
-        { label: '消费属性', value: attributeName },
-        { label: '剩余预算', value: `¥${remaining.toFixed(2)}` },
-        { label: '剩余天数', value: `${statusInfo.value.remainingDays} 天` },
-        { label: '每日可用', value: `¥${dailyBudget}` }
-      ]
+
+    checkResult.value = {
+      ...res.data,
+      details: buildCheckDetails(res.data)
     }
-  } else if (attribute === 3 && checkForm.value.amount > dailyBudget * 2) {
-    result = {
-      level: 'warning', icon: '💭', title: '请三思', levelText: '黄灯 - 欲望消费提醒',
-      reason: `欲望消费 ¥${checkForm.value.amount}，超过日均预算的 2 倍。`,
-      suggestion: '冲动消费是超支主因。建议冷静 24 小时后再决定。',
-      details: [
-        { label: '消费属性', value: attributeName },
-        { label: '消费金额', value: `¥${checkForm.value.amount}` },
-        { label: '日均预算', value: `¥${dailyBudget}` },
-        { label: '倍数', value: `${(checkForm.value.amount / dailyBudget).toFixed(1)}x` }
-      ]
-    }
-  } else {
-    result = {
-      level: 'success', icon: '✅', title: '可以消费', levelText: '绿灯 - 安全范围',
-      reason: '当前预算充足，这笔消费在合理范围内。',
-      suggestion: attribute === 1 ? '必需消费，放心进行。' : '在预算范围内，建议理性消费。',
-      details: [
-        { label: '消费属性', value: attributeName },
-        { label: '剩余预算', value: `¥${remaining.toFixed(2)}` },
-        { label: '消费后剩余', value: `¥${afterSpend.toFixed(2)}` }
-      ]
-    }
+
+    await Promise.all([loadWarningRecords(), loadStatusInfo()])
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('检查失败，请稍后重试')
+  } finally {
+    checking.value = false
   }
-
-  checkResult.value = result
-  checking.value = false
 }
 
-const loadWarningRecords = () => {
-  // TODO [后端接口]: GET /api/warning/records
-  ElMessage.info('预警记录功能需要后端接口支持')
+const loadWarningRecords = async () => {
+  loadingRecords.value = true
+  try {
+    const res = await getWarningRecords()
+    if (!res || res.code !== 200) {
+      ElMessage.error(res?.message || '获取预警记录失败')
+      return
+    }
+
+    warningRecords.value = (res.data || []).filter(
+      item => ['RED', 'YELLOW', 'ANOMALY'].includes(item.warningType)
+    )
+  } catch (error) {
+    console.error(error)
+    ElMessage.error('获取预警记录失败，请稍后重试')
+  } finally {
+    loadingRecords.value = false
+  }
 }
+
+const notifyWarningCountRefresh = () => {
+  window.dispatchEvent(new Event('warning-count-refresh'))
+}
+
+const handleReadAllWarnings = async () => {
+  try {
+    const res = await markAllWarningsAsRead()
+    if (!res || res.code !== 200) {
+      return
+    }
+    notifyWarningCountRefresh()
+  } catch (error) {
+    console.error(error)
+  }
+}
+
 </script>
 
 <style scoped lang="scss">
+.health-card {
+  border-radius: 12px;
+
+  .health-score {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    margin-bottom: 16px;
+
+    .score-circle {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      border: 4px solid;
+      flex-shrink: 0;
+
+      &.good {
+        border-color: #67c23a;
+        background: #f0f9f0;
+      }
+
+      &.warn {
+        border-color: #e6a23c;
+        background: #fff8e1;
+      }
+
+      &.danger {
+        border-color: #f56c6c;
+        background: #ffebee;
+      }
+
+      .score-num {
+        font-size: 28px;
+        font-weight: 700;
+      }
+
+      .score-label {
+        font-size: 11px;
+        color: #909399;
+      }
+    }
+
+    .score-desc {
+      strong {
+        font-size: 15px;
+        color: #303133;
+        display: block;
+        margin-bottom: 4px;
+      }
+
+      p {
+        font-size: 12px;
+        color: #606266;
+        margin: 0;
+      }
+    }
+  }
+
+  .health-summary {
+    display: flex;
+    justify-content: space-between;
+    padding: 12px;
+    background: #fafbfc;
+    border-radius: 8px;
+    margin-bottom: 12px;
+
+    .summary-item {
+      text-align: center;
+      font-size: 12px;
+      color: #606266;
+
+      strong {
+        display: block;
+        font-size: 14px;
+        font-weight: 700;
+        color: #303133;
+        margin-top: 4px;
+      }
+    }
+  }
+
+  .detect-dimensions {
+    padding: 12px;
+    background: #f8f9fa;
+    border-radius: 8px;
+
+    .dim-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #303133;
+      margin-bottom: 8px;
+    }
+
+    .dim-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+
+      .dim-tag {
+        padding: 4px 10px;
+        background: white;
+        border: 1px solid #dcdfe6;
+        border-radius: 12px;
+        font-size: 11px;
+        color: #606266;
+      }
+    }
+  }
+}
+
 .warning-center-container {
-  padding: 0;
-  height: calc(100vh - 80px);
+  padding: 20px;
+  height: auto;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: visible;
 }
 
 // 动画
@@ -685,6 +1155,199 @@ const loadWarningRecords = () => {
     }
   }
 }
+.health-card {
+  border-radius: 12px;
+
+  .smart-hints {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+
+  .mini-hint {
+    display: flex;
+    gap: 10px;
+    padding: 10px 12px;
+    background: #f7f9fc;
+    border-radius: 10px;
+    border: 1px solid #eef2f7;
+  }
+
+  .mini-hint-icon {
+    font-size: 18px;
+    flex-shrink: 0;
+    line-height: 1.2;
+  }
+
+  .mini-hint-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #303133;
+    margin-bottom: 3px;
+  }
+
+  .mini-hint-text {
+    font-size: 12px;
+    color: #7a8394;
+    line-height: 1.5;
+  }
+
+  .detect-overview {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px;
+    background: #fbfcfe;
+    border-radius: 12px;
+    margin-bottom: 14px;
+  }
+
+  .score-ring {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 4px solid #dcdfe6;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    &.good {
+      border-color: #e6a23c;
+      background: #fffaf0;
+    }
+
+    &.warn {
+      border-color: #f5c04d;
+      background: #fffaf2;
+    }
+
+    &.danger {
+      border-color: #f56c6c;
+      background: #fff1f0;
+    }
+
+    .score-num {
+      font-size: 24px;
+      font-weight: 700;
+      color: #303133;
+      line-height: 1;
+    }
+
+    .score-text {
+      margin-top: 4px;
+      font-size: 11px;
+      color: #909399;
+    }
+  }
+
+  .overview-text {
+    strong {
+      display: block;
+      font-size: 15px;
+      color: #303133;
+      margin-bottom: 4px;
+    }
+
+    p {
+      margin: 0;
+      font-size: 12px;
+      color: #7a8394;
+      line-height: 1.6;
+    }
+  }
+
+  .abnormal-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .abnormal-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+
+    &.danger {
+      background: #fff3f3;
+      border-color: #f6c8c8;
+    }
+
+    &.warning {
+      background: #fffaf0;
+      border-color: #f3dfaa;
+    }
+  }
+
+  .abnormal-left {
+    display: flex;
+    gap: 10px;
+    flex: 1;
+  }
+
+  .abnormal-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-top: 5px;
+    background: #f56c6c;
+    flex-shrink: 0;
+  }
+
+  .abnormal-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .abnormal-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #303133;
+    margin-bottom: 3px;
+  }
+
+  .abnormal-reason {
+    font-size: 12px;
+    color: #7a8394;
+    line-height: 1.5;
+    margin-bottom: 3px;
+  }
+
+  .abnormal-time {
+    font-size: 11px;
+    color: #a0a8b8;
+  }
+
+  .abnormal-right {
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .abnormal-amount {
+    font-size: 14px;
+    font-weight: 700;
+    color: #ff6b6b;
+  }
+
+  .abnormal-score {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #909399;
+  }
+
+  .empty-anomaly {
+    padding: 16px 0 4px;
+    text-align: center;
+    font-size: 12px;
+    color: #909399;
+  }
+}
 
 // 预警记录（紧凑）
 .records-card {
@@ -699,36 +1362,102 @@ const loadWarningRecords = () => {
     min-height: 0;
   }
 
-  .todo-alert-compact {
-    margin-bottom: 10px;
-    border-radius: 6px;
-    font-size: 11px;
-    padding: 8px 12px;
+  .records-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 0;
+    color: #909399;
+    text-align: center;
   }
 
-  .records-list-compact {
-    .record-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 10px;
-      border-radius: 8px;
-      margin-bottom: 6px;
+  .records-list-pretty {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
 
-      &.warning { background: #fff8e1; }
-      &.danger { background: #ffebee; }
+  .record-pretty-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 1px solid transparent;
+    transition: all 0.25s ease;
 
-      .record-icon { font-size: 16px; }
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+    }
 
-      .record-content {
-        flex: 1;
-        .record-title { font-size: 12px; font-weight: 600; color: #303133; }
-        .record-time { font-size: 10px; color: #909399; }
+    &.warning {
+      background: linear-gradient(135deg, #fff8e5 0%, #fff4d7 100%);
+      border-color: #f6e2a8;
+    }
+
+    &.danger {
+      background: linear-gradient(135deg, #ffe9ec 0%, #ffe1e6 100%);
+      border-color: #f6c4cb;
+    }
+
+    .record-dot {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      flex-shrink: 0;
+
+      &.warning {
+        background: radial-gradient(circle at 30% 30%, #ffd96b, #d89a14);
+        box-shadow: 0 0 10px rgba(216, 154, 20, 0.35);
+      }
+
+      &.danger {
+        background: radial-gradient(circle at 30% 30%, #ff7b8d, #d63a53);
+        box-shadow: 0 0 10px rgba(214, 58, 83, 0.35);
+      }
+    }
+
+    .record-main {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .record-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #4b5563;
+      line-height: 1.3;
+      white-space: normal;
+      word-break: break-word;
+    }
+
+    .record-time {
+      margin-top: 6px;
+      font-size: 12px;
+      color: #8f98aa;
+    }
+
+    .record-pill {
+      flex-shrink: 0;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+
+      &.warning {
+        background: rgba(255, 255, 255, 0.55);
+        color: #d89a14;
+      }
+
+      &.danger {
+        background: rgba(255, 255, 255, 0.55);
+        color: #e46a7b;
       }
     }
   }
 }
-
 // 响应式
 @media (max-width: 1200px) {
   .main-layout { flex-direction: column; }

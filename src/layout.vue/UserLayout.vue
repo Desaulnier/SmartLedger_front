@@ -1,11 +1,13 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {Fold,Expand,Bell,ArrowDown,User,SwitchButton,Edit,List,PieChart,Wallet,Warning,Coin,Trophy
 } from '@element-plus/icons-vue'
+import { getWarningUnreadCount } from '@/api/warning'
 
 const router = useRouter()
+const route = useRoute()
 const isCollapse = ref(false)
 
 // 用户信息（不从代码写死，从 localStorage 读取）
@@ -15,12 +17,21 @@ const userInfo = ref({
   avatar: ''
 })
 
-// 预警消息数量（不硬编码，后期从接口获取）
-// 当为 0 时不显示红点，1-99 显示数字，>99 显示 99+
+// 预警消息数量
 const warnCount = ref(0)
 
+const loadWarnCount = async () => {
+  try {
+    const res = await getWarningUnreadCount()
+    if (res.code === 200 && res.data) {
+      warnCount.value = Number(res.data.count || 0)
+    }
+  } catch (error) {
+    console.error('获取预警数量失败', error)
+  }
+}
+
 onMounted(() => {
-  // 从本地缓存读取用户信息
   const savedUserInfo = localStorage.getItem('userInfo')
   if (savedUserInfo) {
     try {
@@ -32,17 +43,21 @@ onMounted(() => {
     }
   }
 
-  // ==============================================
-  // TODO 后端接口：获取当前用户的消费预警数量
-  // GET /api/warning/count
-  // 返回示例：{ count: 3 }
-  // ==============================================
-  // warnCount 目前用模拟值，后端实现后替换
-  // 0 = 无预警（不显示红点）
-  // 1-99 = 显示具体数字
-  // >99 = 显示 99+
-  warnCount.value = 0
+  loadWarnCount()
+
+  window.addEventListener('warning-count-refresh', loadWarnCount)
 })
+
+onUnmounted(() => {
+  window.removeEventListener('warning-count-refresh', loadWarnCount)
+})
+
+watch(
+  () => route.fullPath,
+  () => {
+    loadWarnCount()
+  }
+)
 
 
 // 下拉菜单处理
