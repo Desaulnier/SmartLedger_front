@@ -9,17 +9,13 @@
         </h2>
         <p class="page-subtitle">看看你这个月的消费习惯怎么样</p>
       </div>
-      <el-radio-group v-model="rankPeriod" size="small">
-        <el-radio-button label="week">本周</el-radio-button>
-        <el-radio-button label="month">本月</el-radio-button>
-      </el-radio-group>
     </div>
 
     <div class="main-layout">
       <!-- 左侧：评级 + 排行榜 -->
       <div class="left-panel">
         <!-- 我的消费评级 -->
-        <el-card class="my-rank-card fade-in-up" shadow="hover">
+        <el-card v-loading="rankLoading" class="my-rank-card fade-in-up" shadow="hover">
           <div class="rank-content">
             <div class="rank-left">
               <div class="grade-circle" :class="rankInfo.gradeType">
@@ -61,11 +57,13 @@
               :class="{ 'is-me': item.isMe }"
             >
               <div class="rank-badge" :class="getRankClass(index)">
-                <span v-if="index < 3" class="rank-medal">{{ ['🥇', '', '🥉'][index] }}</span>
+                <span v-if="index < 3" class="rank-medal">{{ ['🥇', '🥈', '🥉'][index] }}</span>
                 <span v-else class="rank-num">{{ index + 1 }}</span>
               </div>
               <div class="user-info">
-                <div class="user-avatar">{{ item.avatar }}</div>
+                <el-avatar :size="42" :src="item.avatarUrl || undefined" class="user-avatar">
+  {{ item.avatar || item.name?.charAt(0)?.toUpperCase() }}
+</el-avatar>
                 <div class="user-detail">
                   <div class="user-name">
                     {{ item.name }}
@@ -154,52 +152,298 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+import { getMonthlyAnalysis } from '@/api/analysis'
+import { getBudgetInfo } from '@/api/budget'
+import { getAbnormalBillList } from '@/api/bill'
+import { getLeaderboard, getAchievements } from '@/api/rank'
 
-const rankPeriod = ref('week')
+const rankLoading = ref(false)
+const achievements = ref([])
+const rankPeriod = ref('month')
+const loadAchievements = async () => {
+  try {
+    const res = await getAchievements()
+    if (res.code !== 200) {
+      ElMessage.error(res.message || res.msg || '成就加载失败')
+      return
+    }
+    achievements.value = Array.isArray(res.data) ? res.data : []
+  } catch (error) {
+    console.error('load achievements failed', error)
+    ElMessage.error('成就加载失败')
+  }
+}
 
-const rankInfo = ref({
-  grade: 'A',
-  gradeType: 'success',
-  title: '消费达人',
-  desc: '消费习惯很棒！继续保持理性消费~',
-  stats: [
-    { label: '健康分', value: '85 分' },
-    { label: '必需占比', value: '65%' },
-    { label: '欲望占比', value: '15%' },
-    { label: '预算使用', value: '72%' }
-  ]
+const rankMetrics = ref({
+  healthScore: 100,
+  necessaryRatio: 0,
+  desireRatio: 0,
+  budgetUsage: 0,
+  abnormalCount: 0,
+  avgAnomalyScore: 0
 })
 
-const leaderboard = ref([
-  { id: 1, name: '张三', avatar: '😎', grade: 'S', gradeType: 'success', score: 95, desc: '极简消费', isMe: false },
-  { id: 2, name: '我', avatar: '🤓', grade: 'A', gradeType: 'success', score: 85, desc: '消费达人', isMe: true },
-  { id: 3, name: '李四', avatar: '😏', grade: 'A', gradeType: 'success', score: 82, desc: '理性消费', isMe: false },
-  { id: 4, name: '王五', avatar: '😅', grade: 'B', gradeType: 'warning', score: 68, desc: '偶尔冲动', isMe: false },
-  { id: 5, name: '赵六', avatar: '😰', grade: 'C', gradeType: 'warning', score: 52, desc: '需要控制', isMe: false }
-])
+const leaderboard = ref([])
 
-const habits = ref([
-  { icon: '🍱', name: '餐饮', score: 80, color: '#67c23a', desc: '以食堂为主' },
+const buildMonthStr = () => {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  return `${year}-${month}`
+}
+const calculateHealthScore = ({
+  budgetUsage,
+  necessaryRatio,
+  desireRatio,
+  abnormalCount,
+  avgAnomalyScore
+}) => {
+  let score = 100
+
+  score -= Math.max(0, budgetUsage - 60) * 0.28
+  if (budgetUsage >= 100) score -= 10
+  if (budgetUsage >= 120) score -= 8
+
+  score -= desireRatio * 0.22
+  score += Math.min(necessaryRatio, 70) * 0.08
+
+  score -= abnormalCount * 4.5
+  score -= avgAnomalyScore * 18
+
+  return Math.round(Math.max(45, Math.min(100, score)))
+}
+const getGradeConfig = (score) => {
+  if (score >= 90) {
+    return {
+      grade: 'S',
+      gradeType: 'success',
+      title: '消费达人',
+      desc: '消费节奏稳定，预算控制和异常表现都很优秀。'
+    }
+  }
+  if (score >= 75) {
+    return {
+      grade: 'A',
+      gradeType: 'success',
+      title: '理性消费者',
+      desc: '整体消费健康，当前消费习惯保持得不错。'
+    }
+  }
+  if (score >= 60) {
+    return {
+      grade: 'B',
+      gradeType: 'warning',
+      title: '可提升中',
+      desc: '消费表现基本正常，但还可以继续优化。'
+    }
+  }
+  return {
+    grade: 'C',
+    gradeType: 'danger',
+    title: '需要注意',
+    desc: '异常消费或预算压力偏高，建议尽快调整。'
+  }
+}
+
+const rankInfo = computed(() => {
+  const gradeConfig = getGradeConfig(rankMetrics.value.healthScore)
+  return {
+    ...gradeConfig,
+    stats: [
+      { label: '健康分', value: `${rankMetrics.value.healthScore} 分` },
+      { label: '必需占比', value: `${rankMetrics.value.necessaryRatio}%` },
+      { label: '欲望占比', value: `${rankMetrics.value.desireRatio}%` },
+      { label: '预算使用', value: `${rankMetrics.value.budgetUsage}%` }
+    ]
+  }
+})
+
+const loadRankCard = async () => {
+  rankLoading.value = true
+  try {
+    const monthStr = buildMonthStr()
+
+    const [analysisRes, budgetRes, abnormalRes] = await Promise.all([
+      getMonthlyAnalysis(monthStr),
+      getBudgetInfo(),
+      getAbnormalBillList({ pageNum: 1, pageSize: 50 })
+    ])
+
+    const analysis = analysisRes?.data || {}
+    const budget = budgetRes?.data || {}
+    const abnormalRecords = abnormalRes?.data?.records || []
+
+    const totalExpense = Number(analysis.totalExpense || 0)
+    const necessaryExpense = Number(analysis.necessaryExpense || 0)
+    const desireExpense = Number(analysis.desireExpense || 0)
+    const currentSpent = Number(budget.currentSpent || 0)
+    const monthlyBudget = Number(budget.monthlyBudget || 0)
+
+    const necessaryRatio = totalExpense > 0
+      ? Math.round((necessaryExpense / totalExpense) * 100)
+      : 0
+
+    const desireRatio = totalExpense > 0
+      ? Math.round((desireExpense / totalExpense) * 100)
+      : 0
+
+    const budgetUsage = monthlyBudget > 0
+      ? Math.round((currentSpent / monthlyBudget) * 100)
+      : 0
+
+    const abnormalCount = abnormalRecords.length
+    const avgAnomalyScore = abnormalCount > 0
+      ? abnormalRecords.reduce((sum, item) => sum + Number(item.anomalyScore || 0), 0) / abnormalCount
+      : 0
+
+    const healthScore = calculateHealthScore({
+      budgetUsage,
+      necessaryRatio,
+      desireRatio,
+      abnormalCount,
+      avgAnomalyScore
+    })
+
+    rankMetrics.value = {
+      healthScore,
+      necessaryRatio,
+      desireRatio,
+      budgetUsage,
+      abnormalCount,
+      avgAnomalyScore
+    }
+  } catch (error) {
+    console.error('load rank card failed', error)
+    ElMessage.error('消费达人卡片加载失败')
+  } finally {
+    rankLoading.value = false
+  }
+}
+
+const loadLeaderboard = async () => {
+  try {
+    const res = await getLeaderboard(rankPeriod.value)
+    if (res.code !== 200) {
+      ElMessage.error(res.message || res.msg || '排行榜加载失败')
+      return
+    }
+    leaderboard.value = Array.isArray(res.data) ? res.data : []
+  } catch (error) {
+    console.error('load leaderboard failed', error)
+    ElMessage.error('排行榜加载失败')
+  }
+}
+
+watch(rankPeriod, () => {
+  loadRankCard()
+  loadLeaderboard()
+  loadAchievements()
+})
+
+onMounted(() => {
+  loadRankCard()
+  loadLeaderboard()
+  loadAchievements()
+})
+
+const legacyHabits = ref([
+  { icon: '🍜', name: '餐饮', score: 80, color: '#67c23a', desc: '以食堂为主' },
   { icon: '🎮', name: '娱乐', score: 60, color: '#e6a23c', desc: '偶尔充值' },
   { icon: '📚', name: '学习', score: 90, color: '#409eff', desc: '买书积极' },
-  { icon: '👕', name: '购物', score: 70, color: '#67c23a', desc: '挺节制' },
-  { icon: '🚌', name: '交通', score: 95, color: '#67c23a', desc: '基本坐校车' }
+  { icon: '🛍', name: '购物', score: 70, color: '#67c23a', desc: '较节制' },
+  { icon: '🚌', name: '交通', score: 95, color: '#67c23a', desc: '基本校内' }
 ])
 
-const achievements = ref([
-  { icon: '💰', name: '存钱小能手', desc: '储蓄率达 30%', unlocked: true },
-  { icon: '🍱', name: '食堂达人', desc: '食堂占比 >70%', unlocked: true },
-  { icon: '🏆', name: '月度 S 级', desc: '连续一月 S 级', unlocked: false },
-  { icon: '🎯', name: '预算控制者', desc: '预算使用 <80%', unlocked: true }
-])
 
-const upgradeTips = ref([
+const legacyUpgradeTips = ref([
   { text: '减少奶茶、外卖等欲望消费' },
   { text: '多去食堂就餐，节约开支' },
   { text: '购物前列清单，避免冲动' },
   { text: '善用学生优惠' }
 ])
+
+const habits = computed(() => {
+  const necessaryRatio = Number(rankMetrics.value.necessaryRatio || 0)
+  const desireRatio = Number(rankMetrics.value.desireRatio || 0)
+  const budgetUsage = Number(rankMetrics.value.budgetUsage || 0)
+  const abnormalCount = Number(rankMetrics.value.abnormalCount || 0)
+  const healthScore = Number(rankMetrics.value.healthScore || 0)
+
+  return [
+    {
+      icon: '🍚',
+      name: '刚需消费',
+      score: Math.max(40, Math.min(100, necessaryRatio)),
+      color: necessaryRatio >= 50 ? '#67c23a' : '#e6a23c',
+      desc: necessaryRatio >= 50 ? '本月刚需占比较高' : '刚需消费占比偏低'
+    },
+    {
+      icon: '🧋',
+      name: '欲望消费',
+      score: Math.max(20, Math.min(100, 100 - desireRatio)),
+      color: desireRatio <= 30 ? '#67c23a' : desireRatio <= 45 ? '#e6a23c' : '#f56c6c',
+      desc: desireRatio <= 30 ? '欲望消费控制较稳' : desireRatio <= 45 ? '欲望消费需要留意' : '欲望消费偏高'
+    },
+    {
+      icon: '📒',
+      name: '预算执行',
+      score: Math.max(20, Math.min(100, 100 - Math.max(0, budgetUsage - 20))),
+      color: budgetUsage < 80 ? '#67c23a' : budgetUsage < 100 ? '#e6a23c' : '#f56c6c',
+      desc: budgetUsage < 80 ? '预算执行较稳定' : budgetUsage < 100 ? '预算消耗偏快' : '预算压力较大'
+    },
+    {
+      icon: '🚨',
+      name: '异常波动',
+      score: Math.max(30, Math.min(100, 100 - abnormalCount * 12)),
+      color: abnormalCount === 0 ? '#67c23a' : abnormalCount <= 2 ? '#e6a23c' : '#f56c6c',
+      desc: abnormalCount === 0 ? '本月暂无异常消费' : abnormalCount <= 2 ? '存在少量异常波动' : '异常消费次数偏多'
+    },
+    {
+      icon: '🌿',
+      name: '整体状态',
+      score: Math.max(0, Math.min(100, healthScore)),
+      color: healthScore >= 85 ? '#67c23a' : healthScore >= 70 ? '#409eff' : healthScore >= 60 ? '#e6a23c' : '#f56c6c',
+      desc: healthScore >= 85 ? '整体消费状态优秀' : healthScore >= 70 ? '整体消费状态良好' : healthScore >= 60 ? '还可以继续优化' : '本月需要重点调整'
+    }
+  ]
+})
+
+const upgradeTips = computed(() => {
+  const tips = []
+  const desireRatio = Number(rankMetrics.value.desireRatio || 0)
+  const budgetUsage = Number(rankMetrics.value.budgetUsage || 0)
+  const abnormalCount = Number(rankMetrics.value.abnormalCount || 0)
+  const necessaryRatio = Number(rankMetrics.value.necessaryRatio || 0)
+  const healthScore = Number(rankMetrics.value.healthScore || 0)
+
+  if (desireRatio > 35) {
+    tips.push({ text: '本月欲望消费偏高，先压缩奶茶、外卖和冲动购物。' })
+  }
+
+  if (budgetUsage >= 80) {
+    tips.push({ text: '预算已经用掉较多，后续支出尽量先看清单再决定。' })
+  }
+
+  if (abnormalCount > 0) {
+    tips.push({ text: '出现异常消费记录，建议回看大额或集中支出账单。' })
+  }
+
+  if (necessaryRatio < 45) {
+    tips.push({ text: '刚需消费占比偏低，说明非必要开销有些抢占预算。' })
+  }
+
+  if (healthScore >= 85) {
+    tips.push({ text: '本月整体消费节奏不错，继续保持现在的记账和预算习惯。' })
+  }
+
+  if (tips.length === 0) {
+    tips.push({ text: '当前消费结构比较平稳，继续保持按月复盘的习惯。' })
+  }
+
+  return tips.slice(0, 4)
+})
 
 const getRankClass = (index) => {
   if (index === 0) return 'rank-gold'
@@ -212,10 +456,9 @@ const getRankClass = (index) => {
 <style scoped lang="scss">
 .consumption-rank-container {
   padding: 0;
-  height: calc(100vh - 80px);
+  min-height: calc(100vh - 80px);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 .fade-in-up { animation: fadeInUp 0.5s ease-out both; }
@@ -406,7 +649,13 @@ const getRankClass = (index) => {
         align-items: center;
         gap: 8px;
 
-        .user-avatar { font-size: 24px; }
+        .user-avatar {
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #d7e7e3, #bfd6d0);
+  color: #2F4F4F;
+  font-size: 18px;
+  font-weight: 700;
+}
 
         .user-detail {
           .user-name {

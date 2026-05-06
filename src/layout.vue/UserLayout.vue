@@ -2,7 +2,20 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import {Fold,Expand,Bell,ArrowDown,User,SwitchButton,Edit,List,PieChart,Wallet,Warning,Coin,Trophy
+import {
+  Fold,
+  Expand,
+  Bell,
+  ArrowDown,
+  User,
+  SwitchButton,
+  Edit,
+  List,
+  PieChart,
+  Wallet,
+  Warning,
+  Coin,
+  Trophy
 } from '@element-plus/icons-vue'
 import { getWarningUnreadCount } from '@/api/warning'
 
@@ -10,15 +23,28 @@ const router = useRouter()
 const route = useRoute()
 const isCollapse = ref(false)
 
-// 用户信息（不从代码写死，从 localStorage 读取）
 const userInfo = ref({
   name: '同学',
   email: '',
-  avatar: ''
+  avatar: '',
+  avatarUrl: ''
 })
 
-// 预警消息数量
 const warnCount = ref(0)
+
+const syncUserInfoFromStorage = () => {
+  const savedUserInfo = localStorage.getItem('userInfo')
+  if (!savedUserInfo) return
+
+  try {
+    const parsed = JSON.parse(savedUserInfo)
+    userInfo.value.name = parsed.name || parsed.username || parsed.email?.split('@')[0] || '同学'
+    userInfo.value.email = parsed.email || ''
+    userInfo.value.avatarUrl = parsed.avatarUrl || parsed.avatar_url || ''
+  } catch (e) {
+    console.error('用户信息解析失败', e)
+  }
+}
 
 const loadWarnCount = async () => {
   try {
@@ -32,24 +58,15 @@ const loadWarnCount = async () => {
 }
 
 onMounted(() => {
-  const savedUserInfo = localStorage.getItem('userInfo')
-  if (savedUserInfo) {
-    try {
-      const parsed = JSON.parse(savedUserInfo)
-      userInfo.value.name = parsed.name || parsed.email?.split('@')[0] || '同学'
-      userInfo.value.email = parsed.email || ''
-    } catch (e) {
-      console.error('用户信息解析失败', e)
-    }
-  }
-
+  syncUserInfoFromStorage()
   loadWarnCount()
-
   window.addEventListener('warning-count-refresh', loadWarnCount)
+  window.addEventListener('user-info-refresh', syncUserInfoFromStorage)
 })
 
 onUnmounted(() => {
   window.removeEventListener('warning-count-refresh', loadWarnCount)
+  window.removeEventListener('user-info-refresh', syncUserInfoFromStorage)
 })
 
 watch(
@@ -59,8 +76,6 @@ watch(
   }
 )
 
-
-// 下拉菜单处理
 const handleCommand = (command) => {
   if (command === 'logout') {
     ElMessage.success('已安全退出')
@@ -72,19 +87,14 @@ const handleCommand = (command) => {
   }
 }
 
-// 侧边栏折叠
 const toggleSidebar = () => {
   isCollapse.value = !isCollapse.value
 }
 
-// 当前激活菜单
 const activeMenu = computed(() => {
   return router.currentRoute.value.path
 })
 
-// ==============================
-// 菜单配置（按功能模块分组，贴近大学生活）
-// ==============================
 const menuGroups = [
   {
     groupName: '核心功能',
@@ -94,7 +104,7 @@ const menuGroups = [
     ]
   },
   {
-    groupName: '预算与预警 ⭐',
+    groupName: '预算与预警',
     items: [
       { index: '/user/budget', title: '预算管理', icon: Wallet },
       { index: '/user/warning', title: '消费预警', icon: Warning }
@@ -109,13 +119,12 @@ const menuGroups = [
   {
     groupName: '趣味功能',
     items: [
-      { index: '/user/rank', title: '消费排行', icon: 'Trophy' },
-      { index: '/user/profile', title: '个人中心', icon: 'User' }
+      { index: '/user/rank', title: '消费排行', icon: Trophy },
+      { index: '/user/profile', title: '个人中心', icon: User }
     ]
   }
 ]
 
-// 扁平化菜单用于路由匹配
 const menuItems = computed(() => {
   return menuGroups.flatMap(group => group.items)
 })
@@ -123,27 +132,24 @@ const menuItems = computed(() => {
 
 <template>
   <div class="app-layout">
-    <!-- 侧边栏 -->
     <aside class="sidebar" :class="{ 'is-collapse': isCollapse }">
       <div class="sidebar-header">
         <div class="logo" v-show="!isCollapse">
-          <span class="logo-icon">🎓</span>
+          <span class="logo-icon">📗</span>
           <span class="logo-text">校园记账助手</span>
         </div>
         <div class="logo-mini" v-show="isCollapse">
-          <span>🎓</span>
+          <span>📗</span>
         </div>
       </div>
 
       <nav class="sidebar-menu">
         <template v-for="group in menuGroups" :key="group.groupName">
-          <!-- 分组标题 -->
           <div class="menu-group-header" v-show="!isCollapse">
             <span>{{ group.groupName }}</span>
           </div>
           <div class="menu-group-divider" v-show="!isCollapse"></div>
 
-          <!-- 分组下的菜单项 -->
           <router-link
             v-for="item in group.items"
             :key="item.index"
@@ -154,7 +160,6 @@ const menuItems = computed(() => {
             <el-icon class="menu-icon"><component :is="item.icon" /></el-icon>
             <span class="menu-text" v-show="!isCollapse">{{ item.title }}</span>
 
-            <!-- 预警角标：warnCount > 0 时才显示 -->
             <el-badge
               v-if="item.index === '/user/warning' && warnCount > 0"
               :value="warnCount"
@@ -171,14 +176,12 @@ const menuItems = computed(() => {
       </nav>
 
       <div class="sidebar-footer" v-show="!isCollapse">
-        <div class="campus-tag">🎓 大学生专用</div>
+        <div class="campus-tag">📗 大学生专用</div>
         <div class="version">v1.0.0</div>
       </div>
     </aside>
 
-    <!-- 主内容区 -->
     <div class="main-container" :class="{ 'is-collapse': isCollapse }">
-      <!-- 顶部导航 -->
       <header class="top-header">
         <div class="header-left">
           <el-icon class="collapse-btn" @click="toggleSidebar">
@@ -192,7 +195,6 @@ const menuItems = computed(() => {
         </div>
 
         <div class="header-right">
-          <!-- 通知中心：warnCount > 0 时才显示红点 -->
           <el-badge
             :value="warnCount"
             :hidden="warnCount === 0"
@@ -202,10 +204,9 @@ const menuItems = computed(() => {
             <el-icon class="notify-icon"><Bell /></el-icon>
           </el-badge>
 
-          <!-- 用户菜单 -->
           <el-dropdown trigger="click" @command="handleCommand">
             <div class="user-info">
-              <el-avatar :size="32" class="user-avatar">
+              <el-avatar :size="32" :src="userInfo.avatarUrl || undefined" class="user-avatar">
                 {{ userInfo.name?.charAt(0)?.toUpperCase() }}
               </el-avatar>
               <span class="user-name">{{ userInfo.name }}</span>
@@ -225,7 +226,6 @@ const menuItems = computed(() => {
         </div>
       </header>
 
-      <!-- 页面内容 -->
       <main class="main-content">
         <router-view />
       </main>
@@ -312,7 +312,6 @@ const menuItems = computed(() => {
   }
 }
 
-// 分组标题样式
 .menu-group-header {
   padding: 8px 24px 4px;
   font-size: 11px;

@@ -1,14 +1,32 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import { allCategories } from '../constants'
+import { getCategoryList, addCategory } from '@/api/category'
 
 const props = defineProps({
   modelValue: { type: String, default: 'EXPENSE' },
   billForm: { type: Object, required: true }
 })
+
 const emit = defineEmits(['update:modelValue'])
+
+const categoryMetaMap = new Map(allCategories.map((item) => [item.id, item]))
+
+const normalizeCategory = (category) => {
+  const localMeta = categoryMetaMap.get(category.id) || {}
+  const attribute = Number(category.defaultType ?? category.attribute ?? localMeta.attribute ?? 1)
+
+  return {
+    id: category.id,
+    name: category.name,
+    type: category.type,
+    is_default: category.isDefault === true || category.is_default === 1 ? 1 : 0,
+    icon: localMeta.icon || (category.type === 'INCOME' ? '💰' : '🧾'),
+    attribute
+  }
+}
 
 const localCategories = ref([...allCategories])
 const isDeleteMode = ref(false)
@@ -18,6 +36,30 @@ const newCategoryForm = ref({
   icon: '🧾',
   attribute: 1
 })
+
+const syncCategoryCache = () => {
+  window.dispatchEvent(
+    new CustomEvent('categories-updated', {
+      detail: localCategories.value
+    })
+  )
+}
+
+const loadCategories = async () => {
+  try {
+    const res = await getCategoryList()
+    if (res?.code === 200 && Array.isArray(res.data) && res.data.length > 0) {
+      localCategories.value = res.data.map(normalizeCategory)
+    } else {
+      localCategories.value = [...allCategories]
+    }
+  } catch (error) {
+    console.error('加载分类失败', error)
+    localCategories.value = [...allCategories]
+  } finally {
+    syncCategoryCache()
+  }
+}
 
 const displayCategories = computed(() => {
   return localCategories.value.filter((item) => item.type === props.modelValue)
@@ -45,6 +87,7 @@ const selectCategory = (category) => {
       }
     ).then(() => {
       localCategories.value = localCategories.value.filter((c) => c.id !== category.id)
+      syncCategoryCache()
       ElMessage.success('删除成功')
     }).catch(() => {})
     return
@@ -53,26 +96,46 @@ const selectCategory = (category) => {
   props.billForm.categoryId = category.id
 }
 
-const addNewCategory = () => {
-  if (!newCategoryForm.value.name.trim()) {
+const addNewCategory = async () => {
+  const name = newCategoryForm.value.name.trim()
+  if (!name) {
     ElMessage.warning('请输入分类名称')
     return
   }
 
-  const newCat = {
-    id: Date.now(),
-    name: newCategoryForm.value.name,
-    icon: newCategoryForm.value.icon,
+  const payload = {
+    name,
     type: props.modelValue,
-    is_default: 0,
-    attribute: newCategoryForm.value.attribute
+    defaultType: newCategoryForm.value.attribute
   }
 
-  localCategories.value.push(newCat)
-  ElMessage.success('分类添加成功')
-  showAddDialog.value = false
-  newCategoryForm.value = { name: '', icon: '🧾', attribute: 1 }
+  try {
+    const res = await addCategory(payload)
+    if (res?.code !== 200 || !res.data) {
+      ElMessage.error(res?.message || res?.msg || '分类添加失败')
+      return
+    }
+
+    const createdCategory = normalizeCategory({
+      ...res.data,
+      defaultType: res.data.defaultType ?? newCategoryForm.value.attribute
+    })
+
+    localCategories.value.push(createdCategory)
+    props.billForm.categoryId = createdCategory.id
+    syncCategoryCache()
+    ElMessage.success('分类添加成功')
+    showAddDialog.value = false
+    newCategoryForm.value = { name: '', icon: '🧾', attribute: 1 }
+  } catch (error) {
+    console.error('添加分类失败', error)
+    ElMessage.error('分类添加失败，请稍后重试')
+  }
 }
+
+onMounted(() => {
+  loadCategories()
+})
 </script>
 
 <template>
@@ -161,7 +224,7 @@ const addNewCategory = () => {
             :class="{ active: newCategoryForm.attribute === 2 }"
             @click="newCategoryForm.attribute = 2"
           >
-            <div>改善生活</div>
+            <div>生活改善</div>
           </div>
 
           <div
@@ -169,7 +232,7 @@ const addNewCategory = () => {
             :class="{ active: newCategoryForm.attribute === 3 }"
             @click="newCategoryForm.attribute = 3"
           >
-            <div>欲望消费</div>
+            <div>非必要消费</div>
           </div>
         </div>
       </el-form-item>
@@ -262,23 +325,6 @@ const addNewCategory = () => {
     .header-actions {
       display: flex;
       gap: 6px;
-
-      .delete-mode-btn {
-        font-size: 12px;
-
-        &.el-button--danger {
-          color: #f56c6c;
-        }
-      }
-
-      .add-category-btn {
-        color: #2F4F4F;
-        font-size: 12px;
-
-        &:hover {
-          color: #4a7c7c;
-        }
-      }
     }
   }
 }

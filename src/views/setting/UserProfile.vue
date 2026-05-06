@@ -162,12 +162,15 @@
               v-for="account in accountList"
               :key="account.id"
               class="account-item"
-              :class="{ 'is-default': account.isDefault === 1 }"
+              :class="{ 'is-default': account.isDefault === 1, 'is-current': currentAccountId === account.id }"
             >
               <div class="account-info">
                 <div class="account-name-wrapper">
                   <span class="account-icon">{{ getAccountIcon(account.accountType) }}</span>
                   <span class="account-name">{{ account.accountName }}</span>
+                  <el-tag v-if="currentAccountId === account.id" size="small" type="primary" effect="plain">
+                    当前
+                  </el-tag>
                   <el-tag v-if="account.isDefault === 1" size="small" type="success" effect="dark">
                     默认
                   </el-tag>
@@ -187,6 +190,15 @@
                   @click="handleSetDefault(account.id)"
                 >
                   设为默认
+                </el-button>
+                <el-button
+                  v-if="currentAccountId !== account.id"
+                  size="small"
+                  type="primary"
+                  plain
+                  @click="handleSetCurrent(account.id)"
+                >
+                  设为当前
                 </el-button>
                 <el-button size="small" @click="handleEditAccount(account)">
                   编辑
@@ -224,23 +236,33 @@
               />
             </el-form-item>
             <el-form-item label="账户类型" prop="accountType">
-              <el-select v-model="accountForm.accountType" placeholder="请选择账户类型" style="width: 100%">
-                <el-option label="银行卡" value="BANK_CARD" />
-                <el-option label="支付宝" value="ALIPAY" />
-                <el-option label="微信" value="WECHAT" />
-                <el-option label="现金" value="CASH" />
-                <el-option label="其他" value="OTHER" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="备注" prop="remark">
-              <el-input
-                v-model="accountForm.remark"
-                type="textarea"
-                :rows="3"
-                placeholder="选填，可记录卡号后四位等信息"
-                maxlength="100"
-              />
-            </el-form-item>
+  <el-select v-model="accountForm.accountType" placeholder="请选择账户类型" style="width: 100%">
+    <el-option label="银行卡" value="BANK_CARD" />
+    <el-option label="支付宝" value="ALIPAY" />
+    <el-option label="微信" value="WECHAT" />
+    <el-option label="现金" value="CASH" />
+    <el-option label="其他" value="OTHER" />
+  </el-select>
+</el-form-item>
+
+<el-form-item label="初始余额" prop="balance">
+  <el-input-number
+    v-model="accountForm.balance"
+    :precision="2"
+    :step="100"
+    style="width: 100%"
+  />
+</el-form-item>
+
+<el-form-item label="备注" prop="remark">
+  <el-input
+    v-model="accountForm.remark"
+    type="textarea"
+    :rows="3"
+    placeholder="选填，可记录卡号后四位等信息"
+    maxlength="100"
+  />
+</el-form-item>
           </el-form>
           <template #footer>
             <el-button @click="accountDialogVisible = false">取消</el-button>
@@ -259,7 +281,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import request from '@/utils/request'
-import { getAccountList, createAccount, updateAccount, deleteAccount, setDefaultAccount } from '@/api/accounts'
+import { getAccountList, createAccount, updateAccount, deleteAccount, setDefaultAccount, setCurrentAccount } from '@/api/accounts'
 
 const avatarInputRef = ref(null)
 const saving = ref(false)
@@ -296,7 +318,8 @@ const passwordForm = ref({
 
 const accountForm = ref({
   accountName: '',
-  accountType: '',
+  accountType: null,
+  balance: 0,
   remark: ''
 })
 
@@ -363,6 +386,60 @@ const accountStats = computed(() => [
   }
 ])
 
+const currentAccountId = computed(() => userInfo.value.currentAccountId ?? userInfo.value.current_account_id ?? null)
+const accountTypeValueMap = {
+  CASH: 1,
+  BANK_CARD: 2,
+  ALIPAY: 3,
+  WECHAT: 4,
+  OTHER: 5
+}
+
+const accountTypeKeyMap = {
+  1: 'CASH',
+  2: 'BANK_CARD',
+  3: 'ALIPAY',
+  4: 'WECHAT',
+  5: 'OTHER'
+}
+
+const normalizeAccountTypeValue = (type) => {
+  if (type === null || type === undefined || type === '') return null
+  if (typeof type === 'number') return type
+  if (/^\d+$/.test(String(type))) return Number(type)
+  return accountTypeValueMap[type] ?? null
+}
+
+const normalizeAccountTypeKey = (type) => {
+  if (type === null || type === undefined || type === '') return ''
+  if (typeof type === 'string' && !/^\d+$/.test(type)) return type
+  return accountTypeKeyMap[Number(type)] || 'OTHER'
+}
+
+const getAccountIcon = (type) => {
+  const normalizedType = normalizeAccountTypeKey(type)
+  const iconMap = {
+    BANK_CARD: '💳',
+    ALIPAY: '🔵',
+    WECHAT: '💚',
+    CASH: '💵',
+    OTHER: '📦'
+  }
+  return iconMap[normalizedType] || '📦'
+}
+
+const getAccountTypeName = (type) => {
+  const normalizedType = normalizeAccountTypeKey(type)
+  const nameMap = {
+    BANK_CARD: '银行卡',
+    ALIPAY: '支付宝',
+    WECHAT: '微信',
+    CASH: '现金',
+    OTHER: '其他'
+  }
+  return nameMap[normalizedType] || '其他'
+}
+
 onMounted(() => {
   loadUserInfo()
   loadAccountList()
@@ -374,6 +451,7 @@ const syncLocalUserInfo = (nextUser) => {
     ...nextUser,
     name: nextUser.username
   }))
+  window.dispatchEvent(new Event('user-info-refresh'))
 }
 
 const loadUserInfo = async () => {
@@ -421,7 +499,8 @@ const loadAccountList = async () => {
   }
 }
 
-const getAccountIcon = (type) => {
+const getAccountIconLegacy = (type) => {
+  const normalizedType = normalizeAccountTypeKey(type)
   const iconMap = {
     BANK_CARD: '💳',
     ALIPAY: '🔵',
@@ -429,10 +508,9 @@ const getAccountIcon = (type) => {
     CASH: '💵',
     OTHER: '📦'
   }
-  return iconMap[type] || '📦'
+  return iconMap[normalizedType] || '📦'
 }
-
-const getAccountTypeName = (type) => {
+const getAccountTypeNameLegacy = (type) => {
   const nameMap = {
     BANK_CARD: '银行卡',
     ALIPAY: '支付宝',
@@ -598,7 +676,8 @@ const showAddAccountDialog = () => {
   accountDialogTitle.value = '添加账户'
   accountForm.value = {
     accountName: '',
-    accountType: '',
+    accountType: null,
+    balance: 0,
     remark: ''
   }
   accountDialogVisible.value = true
@@ -609,7 +688,8 @@ const handleEditAccount = (account) => {
   accountDialogTitle.value = '编辑账户'
   accountForm.value = {
     accountName: account.accountName,
-    accountType: account.accountType,
+    accountType: normalizeAccountTypeKey(account.accountType),
+    balance: account.balance ?? 0,
     remark: account.remark || ''
   }
   accountDialogVisible.value = true
@@ -623,17 +703,22 @@ const handleSaveAccount = async () => {
     
     savingAccount.value = true
     try {
+      const payload = {
+        ...accountForm.value,
+        accountType: normalizeAccountTypeValue(accountForm.value.accountType)
+      }
       let res
       if (editingAccountId.value) {
-        res = await updateAccount(editingAccountId.value, accountForm.value)
+        res = await updateAccount(editingAccountId.value, payload)
       } else {
-        res = await createAccount(accountForm.value)
+        res = await createAccount(payload)
       }
       
       if (res.code === 200) {
         ElMessage.success(editingAccountId.value ? '账户更新成功' : '账户添加成功')
         accountDialogVisible.value = false
-        loadAccountList()
+        await loadUserInfo()
+        await loadAccountList()
       } else {
         ElMessage.error(res.message || '操作失败')
       }
@@ -651,13 +736,30 @@ const handleSetDefault = async (id) => {
     const res = await setDefaultAccount(id)
     if (res.code === 200) {
       ElMessage.success('默认账户设置成功')
-      loadAccountList()
+      await loadUserInfo()
+      await loadAccountList()
     } else {
       ElMessage.error(res.message || '设置失败')
     }
   } catch (error) {
     console.error('设置默认账户失败:', error)
     ElMessage.error('设置失败，请稍后重试')
+  }
+}
+
+const handleSetCurrent = async (id) => {
+  try {
+    const res = await setCurrentAccount(id)
+    if (res.code === 200) {
+      ElMessage.success('当前账户切换成功')
+      await loadUserInfo()
+      await loadAccountList()
+    } else {
+      ElMessage.error(res.message || '切换当前账户失败')
+    }
+  } catch (error) {
+    console.error('切换当前账户失败:', error)
+    ElMessage.error('切换当前账户失败，请稍后重试')
   }
 }
 

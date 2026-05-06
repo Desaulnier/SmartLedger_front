@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import axios from 'axios'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -105,6 +106,34 @@ const router = createRouter({
       ]
     }
   ]
+})
+
+router.beforeEach(async (to, from, next) => {
+  const publicPaths = ['/login', '/register', '/forgotpassword']
+  const token = localStorage.getItem('token')
+
+  if (publicPaths.includes(to.path)) {
+    next()
+    return
+  }
+
+  if (!token) {
+    next('/login')
+    return
+  }
+
+  try {
+    await axios.get('/api/users/profile', {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    })
+    next()
+  } catch (error) {
+    localStorage.removeItem('token')
+    localStorage.removeItem('userInfo')
+    next('/login')
+  }
 })
 
 export default router

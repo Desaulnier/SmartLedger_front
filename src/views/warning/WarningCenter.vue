@@ -342,7 +342,7 @@ const anomalySummary = computed(() => {
 })
 
 const detectionScore = computed(() => {
-  if (!abnormalBills.value.length) return 92
+  if (!abnormalBills.value.length) return 100
   const score = 100 - anomalySummary.value.avgScore * 35 - anomalySummary.value.abnormalCount * 6
   return Math.max(45, Math.min(95, Math.round(score)))
 })
@@ -607,7 +607,7 @@ const getRecordTitle = (item) => {
   const msg = item.warningMsg || ''
 
   if (item.warningType === 'ANOMALY') {
-    return msg.length > 18 ? `${msg.slice(0, 18)}...` : msg
+    return msg
   }
   if (item.warningType === 'YELLOW' && item.thresholdSnapshot != null) {
   return `预算使用达 ${item.thresholdSnapshot}%`

@@ -1,7 +1,8 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { createBill } from '@/api/bill'
+import { getCategoryList } from '@/api/category'
 import { allCategories } from '../constants'
 
 const props = defineProps({
@@ -12,11 +13,44 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'update:submitting'])
 
+const categoryMetaMap = new Map(allCategories.map((item) => [item.id, item]))
+const categories = ref([...allCategories])
+
+const normalizeCategory = (category) => {
+  const localMeta = categoryMetaMap.get(category.id) || {}
+  return {
+    id: category.id,
+    name: category.name,
+    type: category.type,
+    attribute: Number(category.defaultType ?? category.attribute ?? localMeta.attribute ?? 1)
+  }
+}
+
+const loadCategories = async () => {
+  try {
+    const res = await getCategoryList()
+    if (res?.code === 200 && Array.isArray(res.data) && res.data.length > 0) {
+      categories.value = res.data.map(normalizeCategory)
+    } else {
+      categories.value = [...allCategories]
+    }
+  } catch (error) {
+    console.error('加载分类失败', error)
+    categories.value = [...allCategories]
+  }
+}
+
+const handleCategoriesUpdated = (event) => {
+  if (Array.isArray(event.detail) && event.detail.length > 0) {
+    categories.value = event.detail.map(normalizeCategory)
+  }
+}
+
 const selectedCategoryInfo = computed(() => {
   if (!props.modelValue.categoryId) return null
-  const cat = allCategories.find((c) => c.id === props.modelValue.categoryId)
+  const cat = categories.value.find((c) => c.id === props.modelValue.categoryId)
   if (!cat) return null
-  const map = { 1: '生存必需', 2: '改善生活', 3: '欲望消费' }
+  const map = { 1: '生存必需', 2: '生活改善', 3: '非必要消费' }
   return {
     name: cat.name,
     attribute: cat.attribute,
@@ -37,9 +71,9 @@ const handleSubmit = async () => {
   emit('update:submitting', true)
 
   try {
-    const dateTime = props.modelValue.billTime.includes('T') 
-      ? props.modelValue.billTime 
-      : props.modelValue.billTime + 'T' + new Date().toTimeString().split(' ')[0];
+    const dateTime = props.modelValue.billTime.includes('T')
+      ? props.modelValue.billTime
+      : `${props.modelValue.billTime}T${new Date().toTimeString().split(' ')[0]}`
 
     const params = {
       amount: props.modelValue.amount,
@@ -56,7 +90,7 @@ const handleSubmit = async () => {
     }
 
     window.dispatchEvent(new Event('warning-count-refresh'))
-ElMessage.success('记账成功')
+    ElMessage.success('记账成功')
     emit('update:modelValue', {
       amount: 0,
       categoryId: null,
@@ -70,6 +104,15 @@ ElMessage.success('记账成功')
     emit('update:submitting', false)
   }
 }
+
+onMounted(() => {
+  loadCategories()
+  window.addEventListener('categories-updated', handleCategoriesUpdated)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('categories-updated', handleCategoriesUpdated)
+})
 </script>
 
 <template>
@@ -102,7 +145,7 @@ ElMessage.success('记账成功')
           v-model="props.modelValue.remark"
           type="textarea"
           :rows="2"
-          placeholder="记一下这笔账单的故事..."
+          placeholder="记一下这笔账单的说明"
         />
       </el-form-item>
     </el-form>
@@ -121,7 +164,7 @@ ElMessage.success('记账成功')
     :loading="submitting"
     @click="handleSubmit"
   >
-    {{ submitting ? '记账中...' : '✨ 确认记账' }}
+    {{ submitting ? '记账中...' : '确认记账' }}
   </el-button>
 </template>
 

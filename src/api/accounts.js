@@ -34,3 +34,10 @@ export function deleteAccount(id) {
 export function setDefaultAccount(id) {
   return request.put(`/accounts/${id}/set-default`)
 }
+
+/**
+ * 设置当前账户
+ */
+export function setCurrentAccount(id) {
+  return request.put(`/accounts/${id}/set-current`)
+}
