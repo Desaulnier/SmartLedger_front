@@ -16,8 +16,7 @@
         </el-form-item>
 
         <el-form-item label="状态">
-          <el-select v-model="searchForm.status" placeholder="请选择状态" clearable>
-            <el-option label="正常" value="ACTIVE" />
+          <el-select v-model="searchForm.status" class="filter-select" placeholder="请选择状态" clearable>
             <el-option label="禁用" value="DISABLED" />
             <el-option label="待审核" value="PENDING" />
             <el-option label="封禁" value="BANNED" />
@@ -25,7 +24,7 @@
         </el-form-item>
 
         <el-form-item label="角色">
-          <el-select v-model="searchForm.role" placeholder="请选择角色" clearable>
+          <el-select v-model="searchForm.role" class="filter-select" placeholder="请选择角色" clearable>
             <el-option label="普通用户" value="USER" />
             <el-option label="管理员" value="ADMIN" />
           </el-select>
@@ -265,6 +264,10 @@ onMounted(() => {
 </script>
 
 <style scoped lang="scss">
+:deep(.filter-select) {
+  width: 160px;
+}
+
 .user-manage-container {
   .page-header {
     margin-bottom: 20px;

@@ -7,3 +7,7 @@ export function getCategoryList() {
 export function addCategory(data) {
   return request.post('/categories/add', data)
 }
+
+export function deleteCategory(id) {
+  return request.delete(`/categories/${id}`)
+}

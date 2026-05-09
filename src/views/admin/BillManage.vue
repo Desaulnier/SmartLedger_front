@@ -5,16 +5,6 @@
       <p class="page-subtitle">查看和管理系统账单数据</p>
     </div>
 
-    <!-- TODO [后端接口]: GET /api/admin/bills -->
-    <!-- <el-alert type="info" :closable="false" class="todo-alert">
-      <template #default>
-        <strong>TODO [后端接口]</strong><br>
-        GET /api/admin/bills - 获取账单列表（分页、筛选）<br>
-        DELETE /api/admin/bills/{id} - 删除账单<br>
-        GET /api/admin/bills/stats - 获取账单统计数据
-      </template>
-    </el-alert> -->
-
     <!-- 搜索筛选 -->
     <el-card class="search-card" shadow="hover">
       <el-form :inline="true">
@@ -22,7 +12,7 @@
           <el-input v-model="searchForm.user" placeholder="用户名/邮箱" clearable />
         </el-form-item>
         <el-form-item label="类型">
-          <el-select v-model="searchForm.type" placeholder="请选择类型" clearable>
+          <el-select v-model="searchForm.type" class="filter-select" placeholder="请选择类型" clearable>
             <el-option label="支出" value="EXPENSE" />
             <el-option label="收入" value="INCOME" />
           </el-select>
@@ -231,6 +221,9 @@ onMounted(() => {
 </script>
 
 <style scoped lang="scss">
+:deep(.filter-select) {
+  width: 120px;
+}
 .bill-manage-container {
   .page-header {
     margin-bottom: 20px;

@@ -8,6 +8,14 @@ export function getBudgetInfo() {
   })
 }
 
+// 获取周预算拆解
+export function getWeeklyBreakdown() {
+  return request({
+    url: '/budget/weekly-breakdown',
+    method: 'get'
+  })
+}
+
 // 更新生活费设置
 export function updateAllowance(data) {
   return request({

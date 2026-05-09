@@ -7,7 +7,7 @@
           <span class="title-icon pulse">🚨</span>
           超前消费预警
         </h2>
-        <p class="page-subtitle">记账前先问系统："这笔钱该不该花？"</p>
+        <p class="page-subtitle">消费前先问系统："这笔钱该不该花？"</p>
       </div>
       <el-tag :type="statusTagType" size="large" class="status-tag" :class="{ pulse: budgetUsage >= 80 }">
         {{ statusText }}
@@ -192,7 +192,7 @@
               <span class="rule-icon">🟡</span>
               <div class="rule-content">
                 <strong>黄灯 - 谨慎</strong>
-                <span>预算≥80%，减少非必要</span>
+                <span>预算大于阈值，减少非必要</span>
               </div>
             </div>
             <div class="rule-item red">
@@ -294,6 +294,7 @@ import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { getBudgetInfo } from '@/api/budget'
 import { getAbnormalBillList } from '@/api/bill'
+import { getMonthlyAnalysis } from '@/api/analysis'
 import {
   getBudgetWarning,
   checkConsumptionWarning,
@@ -341,12 +342,21 @@ const anomalySummary = computed(() => {
   }
 })
 
+// 异常检测分数（满分100，越高越稳定）
 const detectionScore = computed(() => {
   if (!abnormalBills.value.length) return 100
-  const score = 100 - anomalySummary.value.avgScore * 35 - anomalySummary.value.abnormalCount * 6
-  return Math.max(45, Math.min(95, Math.round(score)))
-})
 
+  const avgScore = Number(anomalySummary.value.avgScore || 0)
+  const abnormalCount = Number(anomalySummary.value.abnormalCount || 0)
+  const maxScore = Number(anomalySummary.value.maxScore || 0)
+
+  const severityPenalty = avgScore * 40
+  const countPenalty = abnormalCount * 5
+  const maxPenalty = maxScore >= 0.85 ? 8 : 0
+
+  const score = 100 - severityPenalty - countPenalty - maxPenalty
+  return Math.max(40, Math.min(95, Math.round(score)))
+})
 const anomalyScoreClass = computed(() => {
   if (detectionScore.value >= 80) return 'good'
   if (detectionScore.value >= 60) return 'warn'
@@ -423,7 +433,7 @@ const statusInfo = ref({
   currentSpent: 0,
   remainingDays: 0,
   dailyBudget: 0,
-  nonEssentialRatio: 0.2,
+  nonEssentialRatio: 0,
   warningThreshold: 80
 })
 
@@ -456,6 +466,13 @@ const detectDims = ref(['预算消耗', '非必要开支', '日均支出', '超�
 const formatMoney = (value) => {
   const num = Number(value || 0)
   return Number.isNaN(num) ? '0.00' : num.toFixed(2)
+}
+
+const getCurrentMonth = () => {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  return `${year}-${month}`
 }
 
 const getAttributeType = (attr) => {
@@ -626,40 +643,44 @@ watch(
 )
 
 onMounted(async () => {
-  await Promise.all([loadStatusInfo(), loadWarningRecords(), loadAbnormalBills()])
+  await loadStatusInfo()
+  await loadWarningRecords()
+  await loadAbnormalBills()
   await handleReadAllWarnings()
 })
 
 const loadStatusInfo = async () => {
   try {
-    const [budgetRes, warningRes] = await Promise.all([
-      getBudgetInfo(),
-      getBudgetWarning()
-    ])
+    const budgetRes = await getBudgetInfo()
 
     if (budgetRes?.code === 200 && budgetRes.data) {
       statusInfo.value = {
-  monthlyAllowance: parseFloat(budgetRes.data.monthlyAllowance) || 0,
-  monthlyBudget: parseFloat(budgetRes.data.monthlyBudget) || 0,
-  currentSpent: parseFloat(budgetRes.data.currentSpent) || 0,
-  remainingDays: budgetRes.data.remainingDays ?? 0,
-  dailyBudget: parseFloat(budgetRes.data.dailyBudget) || 0,
-  nonEssentialRatio: 0.2,
-  warningThreshold: parseInt(budgetRes.data.warningThreshold) || 80
-}
+        monthlyAllowance: parseFloat(budgetRes.data.monthlyAllowance) || 0,
+        monthlyBudget: parseFloat(budgetRes.data.monthlyBudget) || 0,
+        currentSpent: parseFloat(budgetRes.data.currentSpent) || 0,
+        remainingDays: budgetRes.data.remainingDays ?? 0,
+        dailyBudget: parseFloat(budgetRes.data.dailyBudget) || 0,
+        nonEssentialRatio: 0,
+        warningThreshold: parseInt(budgetRes.data.warningThreshold) || 80
+      }
     } else {
       ElMessage.warning(budgetRes?.message || '获取预算信息失败')
     }
 
+    const analysisRes = await getMonthlyAnalysis(getCurrentMonth())
+    if (analysisRes?.code === 200 && analysisRes.data) {
+      const totalExpense = Number(analysisRes.data.totalExpense || 0)
+      const desireExpense = Number(analysisRes.data.desireExpense || 0)
+
+      statusInfo.value.nonEssentialRatio = totalExpense > 0
+        ? Math.min(1, Math.max(0, desireExpense / totalExpense))
+        : 0
+    }
+
+    const warningRes = await getBudgetWarning()
     if (warningRes?.code === 200 && warningRes.data) {
-      const warningData = warningRes.data
-      if (warningData.warningLevel === 'RED') {
-        statusInfo.value.nonEssentialRatio = 0.35
-      } else if (warningData.warningLevel === 'YELLOW') {
-        statusInfo.value.nonEssentialRatio = 0.25
-      } else {
-        statusInfo.value.nonEssentialRatio = 0.15
-      }
+      statusInfo.value.warningThreshold =
+        parseInt(warningRes.data.warningThreshold) || statusInfo.value.warningThreshold
     }
   } catch (error) {
     console.error(error)

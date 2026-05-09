@@ -5,9 +5,10 @@ import { Plus, Delete, ArrowDown } from '@element-plus/icons-vue'
 import { allCategories } from '../constants'
 
 const props = defineProps({
-  modelValue: { type: Object, required: true }
+  modelValue: { type: Object, required: true },
+  billType: { type: String,  default: 'EXPENSE' }
 })
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'update:bill-type'])
 
 const campusScenarios = ref([
   {
@@ -134,13 +135,17 @@ const toggleScenario = (idx) => {
 }
 
 const quickScenarioBill = (item) => {
+  const matchedCategory = allCategories.find(c => c.id === item.categoryId)
+  const targetBillType = item.billType || matchedCategory?.type || 'EXPENSE'
+
+  emit('update:billType', targetBillType)
   emit('update:modelValue', {
-    ...props.modelValue,
     amount: item.amount,
     categoryId: item.categoryId,
     remark: item.remark,
     billTime: new Date().toISOString().split('T')[0]
   })
+
   ElMessage.success(`已填入 ${item.label}`)
 }
 

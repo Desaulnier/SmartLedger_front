@@ -42,13 +42,6 @@
             <span class="card-title">🏅 理智消费榜单</span>
           </template>
 
-          <!-- TODO [后端接口]: GET /api/rank/my-grade -->
-          <!-- <el-alert type="info" :closable="false" class="todo-alert-compact">
-            <template #default>
-              <strong>TODO [后端接口]</strong> GET /api/rank/my-grade · GET /api/rank/records
-            </template>
-          </el-alert> -->
-
           <div class="leaderboard-list">
             <div
               v-for="(item, index) in leaderboard"
@@ -76,8 +69,8 @@
                 </div>
               </div>
               <div class="user-score">
-                <div class="score-value">{{ item.score }}</div>
-                <div class="score-label">健康分</div>
+                <div class="score-value">{{ item.score ?? '--' }}</div>
+<div class="score-label">{{ item.score == null ? '暂无评分' : '健康分' }}</div>
               </div>
             </div>
           </div>
@@ -177,7 +170,7 @@ const loadAchievements = async () => {
 }
 
 const rankMetrics = ref({
-  healthScore: 100,
+  healthScore: null,
   necessaryRatio: 0,
   desireRatio: 0,
   budgetUsage: 0,
@@ -186,6 +179,7 @@ const rankMetrics = ref({
 })
 
 const leaderboard = ref([])
+const currentUserRank = computed(() => leaderboard.value.find(item => item.isMe) || null)
 
 const buildMonthStr = () => {
   const now = new Date()
@@ -193,28 +187,16 @@ const buildMonthStr = () => {
   const month = String(now.getMonth() + 1).padStart(2, '0')
   return `${year}-${month}`
 }
-const calculateHealthScore = ({
-  budgetUsage,
-  necessaryRatio,
-  desireRatio,
-  abnormalCount,
-  avgAnomalyScore
-}) => {
-  let score = 100
-
-  score -= Math.max(0, budgetUsage - 60) * 0.28
-  if (budgetUsage >= 100) score -= 10
-  if (budgetUsage >= 120) score -= 8
-
-  score -= desireRatio * 0.22
-  score += Math.min(necessaryRatio, 70) * 0.08
-
-  score -= abnormalCount * 4.5
-  score -= avgAnomalyScore * 18
-
-  return Math.round(Math.max(45, Math.min(100, score)))
-}
 const getGradeConfig = (score) => {
+  if (score == null) {
+    return {
+      grade: '--',
+      gradeType: 'info',
+      title: '暂无评分',
+      desc: '本月暂无有效支出数据，暂不参与健康评分'
+    }
+  }
+
   if (score >= 90) {
     return {
       grade: 'S',
@@ -248,11 +230,13 @@ const getGradeConfig = (score) => {
 }
 
 const rankInfo = computed(() => {
-  const gradeConfig = getGradeConfig(rankMetrics.value.healthScore)
+  const healthScore = currentUserRank.value?.score ?? null
+  const gradeConfig = getGradeConfig(healthScore)
+
   return {
     ...gradeConfig,
     stats: [
-      { label: '健康分', value: `${rankMetrics.value.healthScore} 分` },
+      { label: '健康分', value: healthScore == null ? '暂无评分' : `${healthScore} 分` },
       { label: '必需占比', value: `${rankMetrics.value.necessaryRatio}%` },
       { label: '欲望占比', value: `${rankMetrics.value.desireRatio}%` },
       { label: '预算使用', value: `${rankMetrics.value.budgetUsage}%` }
@@ -268,17 +252,18 @@ const loadRankCard = async () => {
     const [analysisRes, budgetRes, abnormalRes] = await Promise.all([
       getMonthlyAnalysis(monthStr),
       getBudgetInfo(),
-      getAbnormalBillList({ pageNum: 1, pageSize: 50 })
+      getAbnormalBillList({ pageNum: 1, pageSize: 200 })
     ])
 
     const analysis = analysisRes?.data || {}
     const budget = budgetRes?.data || {}
-    const abnormalRecords = abnormalRes?.data?.records || []
+    const abnormalRecords = Array.isArray(abnormalRes?.data?.records)
+      ? abnormalRes.data.records.filter(item => String(item.occurTime || '').startsWith(monthStr))
+      : []
 
     const totalExpense = Number(analysis.totalExpense || 0)
     const necessaryExpense = Number(analysis.necessaryExpense || 0)
     const desireExpense = Number(analysis.desireExpense || 0)
-    const currentSpent = Number(budget.currentSpent || 0)
     const monthlyBudget = Number(budget.monthlyBudget || 0)
 
     const necessaryRatio = totalExpense > 0
@@ -290,7 +275,7 @@ const loadRankCard = async () => {
       : 0
 
     const budgetUsage = monthlyBudget > 0
-      ? Math.round((currentSpent / monthlyBudget) * 100)
+      ? Math.round((totalExpense / monthlyBudget) * 100)
       : 0
 
     const abnormalCount = abnormalRecords.length
@@ -298,16 +283,8 @@ const loadRankCard = async () => {
       ? abnormalRecords.reduce((sum, item) => sum + Number(item.anomalyScore || 0), 0) / abnormalCount
       : 0
 
-    const healthScore = calculateHealthScore({
-      budgetUsage,
-      necessaryRatio,
-      desireRatio,
-      abnormalCount,
-      avgAnomalyScore
-    })
-
     rankMetrics.value = {
-      healthScore,
+      healthScore: currentUserRank.value?.score ?? null,
       necessaryRatio,
       desireRatio,
       budgetUsage,
@@ -330,6 +307,7 @@ const loadLeaderboard = async () => {
       return
     }
     leaderboard.value = Array.isArray(res.data) ? res.data : []
+    rankMetrics.value.healthScore = currentUserRank.value?.score ?? null
   } catch (error) {
     console.error('load leaderboard failed', error)
     ElMessage.error('排行榜加载失败')
@@ -365,6 +343,46 @@ const legacyUpgradeTips = ref([
 ])
 
 const habits = computed(() => {
+  if (rankMetrics.value.healthScore == null) {
+    return [
+      {
+        icon: '🍚',
+        name: '刚需消费',
+        score: 0,
+        color: '#dcdfe6',
+        desc: '本月暂无有效支出数据'
+      },
+      {
+        icon: '🧋',
+        name: '欲望消费',
+        score: 0,
+        color: '#dcdfe6',
+        desc: '本月暂无有效支出数据'
+      },
+      {
+        icon: '📒',
+        name: '预算执行',
+        score: 0,
+        color: '#dcdfe6',
+        desc: '本月暂无有效支出数据'
+      },
+      {
+        icon: '🚨',
+        name: '异常波动',
+        score: 0,
+        color: '#dcdfe6',
+        desc: '本月暂无有效支出数据'
+      },
+      {
+        icon: '🌿',
+        name: '整体状态',
+        score: 0,
+        color: '#dcdfe6',
+        desc: '本月暂无有效支出数据'
+      }
+    ]
+  }
+
   const necessaryRatio = Number(rankMetrics.value.necessaryRatio || 0)
   const desireRatio = Number(rankMetrics.value.desireRatio || 0)
   const budgetUsage = Number(rankMetrics.value.budgetUsage || 0)
@@ -391,7 +409,7 @@ const habits = computed(() => {
       name: '预算执行',
       score: Math.max(20, Math.min(100, 100 - Math.max(0, budgetUsage - 20))),
       color: budgetUsage < 80 ? '#67c23a' : budgetUsage < 100 ? '#e6a23c' : '#f56c6c',
-      desc: budgetUsage < 80 ? '预算执行较稳定' : budgetUsage < 100 ? '预算消耗偏快' : '预算压力较大'
+      desc: budgetUsage < 80 ? '预算执行较稳妥' : budgetUsage < 100 ? '预算消耗偏快' : '预算压力较大'
     },
     {
       icon: '🚨',
@@ -409,6 +427,7 @@ const habits = computed(() => {
     }
   ]
 })
+
 
 const upgradeTips = computed(() => {
   const tips = []

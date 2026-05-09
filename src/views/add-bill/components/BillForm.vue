@@ -50,12 +50,16 @@ const selectedCategoryInfo = computed(() => {
   if (!props.modelValue.categoryId) return null
   const cat = categories.value.find((c) => c.id === props.modelValue.categoryId)
   if (!cat) return null
-  const map = { 1: '生存必需', 2: '生活改善', 3: '非必要消费' }
+  const map = { 1: '生存必需', 2: '生活改善', 3: '欲望消费' }
   return {
     name: cat.name,
     attribute: cat.attribute,
     attributeText: map[cat.attribute]
   }
+})
+
+const filteredCategories = computed(() => {
+  return categories.value.filter((category) => category.type === props.billType)
 })
 
 const handleSubmit = async () => {
@@ -71,6 +75,12 @@ const handleSubmit = async () => {
   emit('update:submitting', true)
 
   try {
+    const selectedCategory = filteredCategories.value.find((item) => item.id === props.modelValue.categoryId)
+    if (!selectedCategory) {
+      ElMessage.warning('当前收支类型与所选分类不匹配')
+      return
+    }
+
     const dateTime = props.modelValue.billTime.includes('T')
       ? props.modelValue.billTime
       : `${props.modelValue.billTime}T${new Date().toTimeString().split(' ')[0]}`
@@ -81,6 +91,12 @@ const handleSubmit = async () => {
       occurTime: dateTime,
       remark: props.modelValue.remark || '',
       billType: props.billType
+    }
+
+    if (props.billType === 'INCOME') {
+      params.incomeSource = 'OTHER'
+    } else {
+      params.expenseMethod = 'OTHER'
     }
 
     const res = await createBill(params)

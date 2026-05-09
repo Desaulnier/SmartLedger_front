@@ -118,7 +118,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import {
@@ -126,6 +126,12 @@ import {
   getTrendAnalysis,
   getAnalysisSuggestions
 } from '@/api/analysis'
+
+// 处理图表重置
+const handleResize = () => {
+  attributeChart?.resize()
+  trendChart?.resize()
+}
 
 const getCurrentMonth = () => {
   const now = new Date()
@@ -148,6 +154,17 @@ const monthlyStats = ref({
   improveExpense: 0,
   desireExpense: 0
 })
+const resetMonthlyStats = () => {
+  monthlyStats.value = {
+    totalIncome: 0,
+    totalExpense: 0,
+    balance: 0,
+    necessaryExpense: 0,
+    improveExpense: 0,
+    desireExpense: 0
+  }
+}
+
 
 const suggestions = ref([])
 
@@ -279,7 +296,8 @@ const loadTrendData = async (monthStr) => {
   try {
     trendLoading.value = true
     const response = await getTrendAnalysis(monthStr)
-    if (response.data && Array.isArray(response.data)) {
+
+    if (response?.code === 200 && Array.isArray(response.data)) {
       renderTrendChart(response.data)
     } else {
       renderTrendChart([])
@@ -296,7 +314,8 @@ const loadSuggestions = async (monthStr) => {
   try {
     suggestionsLoading.value = true
     const response = await getAnalysisSuggestions(monthStr)
-    if (response.data && Array.isArray(response.data)) {
+
+    if (response?.code === 200 && Array.isArray(response.data)) {
       suggestions.value = response.data.map((item, index) => {
         if (typeof item === 'string') {
           return {
@@ -324,7 +343,8 @@ const loadMonthlyData = async () => {
     const monthStr = getMonthStr()
 
     const response = await getMonthlyAnalysis(monthStr)
-    if (response.data) {
+
+    if (response?.code === 200 && response.data) {
       monthlyStats.value = {
         totalIncome: Number(response.data.totalIncome || 0),
         totalExpense: Number(response.data.totalExpense || 0),
@@ -333,13 +353,19 @@ const loadMonthlyData = async () => {
         improveExpense: Number(response.data.improveExpense || 0),
         desireExpense: Number(response.data.desireExpense || 0)
       }
-      renderAttributeChart()
+    } else {
+      resetMonthlyStats()
     }
 
+    renderAttributeChart()
     await loadTrendData(monthStr)
     await loadSuggestions(monthStr)
   } catch (error) {
     console.error('加载月度分析数据失败:', error)
+    resetMonthlyStats()
+    renderAttributeChart()
+    await loadTrendData(getMonthStr())
+    suggestions.value = []
     ElMessage.warning('加载消费分析数据失败，请稍后重试')
   } finally {
     loading.value = false
@@ -349,11 +375,11 @@ const loadMonthlyData = async () => {
 onMounted(() => {
   initCharts()
   loadMonthlyData()
+  window.addEventListener('resize', handleResize)
+})
 
-  window.addEventListener('resize', () => {
-    attributeChart?.resize()
-    trendChart?.resize()
-  })
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
 })
 </script>
 

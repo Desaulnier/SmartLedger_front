@@ -117,21 +117,6 @@
               <div class="form-hint">每日必须花这么多才能保证基本生活</div>
             </el-form-item>
 
-            <el-form-item label="应急资金">
-              <el-input-number
-                v-model="allowanceForm.emergencyFund"
-                :min="0"
-                :precision="2"
-                :step="50"
-                placeholder="不可动用的底线资金"
-                style="width: 100%"
-                class="glow-input"
-              >
-                <template #prepend>¥</template>
-              </el-input-number>
-              <div class="form-hint emergency-hint">⚠️ 这笔钱不到万不得已不要用！</div>
-            </el-form-item>
-
             <el-form-item>
               <el-button
                 type="primary"
@@ -259,53 +244,36 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Wallet, Clock, Check, Warning } from '@element-plus/icons-vue'
-import { getBudgetInfo, updateAllowance, updateBudget } from '@/api/budget'
+import { getBudgetInfo, getWeeklyBreakdown, updateAllowance, updateBudget } from '@/api/budget'
 
-const splitWeeklyBudgets = (totalBudget) => {
-  const total = Number(totalBudget || 0)
-  if (total <= 0) return [0, 0, 0, 0]
 
-  const base = Math.floor((total / 4) * 100) / 100
-  const result = [base, base, base]
-  const last = Number((total - base * 3).toFixed(2))
-  result.push(last)
 
-  return result.map(item => Number(item.toFixed(2)))
-}
+const weeklyBreakdown = ref([])
 
-const weeklyBreakdown = computed(() => {
-  const totalBudget = Number(overviewInfo.value.monthlyBudget || 0)
-  const totalSpent = Number(overviewInfo.value.currentSpent || 0)
+const loadWeeklyBreakdown = async () => {
+  try {
+    const response = await getWeeklyBreakdown()
 
-  const budgets = splitWeeklyBudgets(totalBudget)
-
-  const now = new Date()
-  const currentWeekIndex = Math.min(3, Math.floor((now.getDate() - 1) / 7))
-  const passedWeeks = currentWeekIndex + 1
-
-  const avgSpent = passedWeeks > 0 ? totalSpent / passedWeeks : 0
-
-  return budgets.map((budget, index) => {
-    let status = 'upcoming'
-    if (index < currentWeekIndex) status = 'completed'
-    if (index === currentWeekIndex) status = 'current'
-
-    const spent = index <= currentWeekIndex ? Number(avgSpent.toFixed(2)) : 0
-    const remaining = Math.max(0, Number((budget - spent).toFixed(2)))
-
-    return {
-      week: `第 ${index + 1} 周`,
-      budget: Number(budget.toFixed(2)),
-      spent,
-      remaining,
-      status
+    if (!response || response.code !== 200 || !Array.isArray(response.data)) {
+      weeklyBreakdown.value = []
+      return
     }
-  })
-})
 
+    weeklyBreakdown.value = response.data.map(item => ({
+      week: item.week || '',
+      budget: Number(item.budget || 0),
+      spent: Number(item.spent || 0),
+      remaining: Number(item.remaining || 0),
+      status: item.status || 'upcoming'
+    }))
+  } catch (error) {
+    console.error('加载周预算拆解失败:', error)
+    weeklyBreakdown.value = []
+  }
+}
 const getWeekProgress = (week) => {
   const budget = Number(week.budget || 0)
   const spent = Number(week.spent || 0)
@@ -334,7 +302,6 @@ const overviewInfo = ref({
   budgetRemaining: 0,
   remainingDays: 0,
   dailyBudget: 0,
-  emergencyFund: 0,
   dailySurvivalCost: 0,
   warningThreshold: 80
 })
@@ -351,8 +318,7 @@ const overviewItems = computed(() => [
 // 生活费表单
 const allowanceForm = ref({
   monthlyAllowance: 0,
-  dailySurvivalCost: 0,
-  emergencyFund: 0
+  dailySurvivalCost: 0
 })
 
 // 预算表单
@@ -410,9 +376,12 @@ const calculateRemainingDays = () => {
   return Math.max(0, daysInMonth - currentDay + 1) // +1 因为包含今天
 }
 
-onMounted(() => {
-  loadBudgetInfo()
-  animateNumbers()
+onMounted(async () => {
+  await Promise.allSettled([
+    loadBudgetInfo(),
+    loadWeeklyBreakdown()
+  ])
+  await nextTick()
 })
 
 // 加载预算信息
@@ -420,36 +389,41 @@ const loadBudgetInfo = async () => {
   loading.value = true
   try {
     const response = await getBudgetInfo()
+
+    if (!response || response.code !== 200 || !response.data) {
+      ElMessage.warning(response?.message || '加载预算信息失败')
+      return
+    }
+
     const data = response.data
 
-    // 更新概况信息 - 所有数据都从后端获取
     overviewInfo.value = {
       monthlyAllowance: parseFloat(data.monthlyAllowance) || 0,
       monthlyBudget: parseFloat(data.monthlyBudget) || 0,
       currentSpent: parseFloat(data.currentSpent) || 0,
       budgetRemaining: parseFloat(data.budgetRemaining) || 0,
-      remainingDays: calculateRemainingDays(), // 使用前端计算的剩余天数
+      remainingDays: Number(data.remainingDays) || calculateRemainingDays(),
       dailyBudget: parseFloat(data.dailyBudget) || 0,
       emergencyFund: parseFloat(data.emergencyFund) || 0,
       dailySurvivalCost: parseFloat(data.dailySurvivalCost) || 0,
       warningThreshold: parseInt(data.warningThreshold) || 80
     }
 
-    // 更新表单 - 所有数据都从后端获取
     allowanceForm.value = {
       monthlyAllowance: parseFloat(data.monthlyAllowance) || 0,
-      dailySurvivalCost: parseFloat(data.dailySurvivalCost) || 0,
-      emergencyFund: parseFloat(data.emergencyFund) || 0
+      dailySurvivalCost: parseFloat(data.dailySurvivalCost) || 0
     }
 
     budgetForm.value = {
       monthlyBudget: parseFloat(data.monthlyBudget) || 0,
       warningThreshold: parseInt(data.warningThreshold) || 80
     }
+
+    await nextTick()
+    animateNumbers()
   } catch (error) {
     console.error('加载预算信息失败:', error)
-    ElMessage.error('加载预算信息失败，请检查网络连接')
-    // 保持默认值，不重置
+    ElMessage.error('加载预算信息失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -487,9 +461,14 @@ const handleSaveAllowance = async () => {
   savingAllowance.value = true
   
   try {
-    await updateAllowance(allowanceForm.value)
+    const res = await updateAllowance(allowanceForm.value)
+    if (!res || res.code !== 200) {
+      ElMessage.error(res?.message || '保存失败，请重试')
+      return
+      } 
     ElMessage.success('生活费设置已保存')
     await loadBudgetInfo()
+    await loadWeeklyBreakdown()
   } catch (error) {
     console.error('保存生活费设置失败:', error)
     ElMessage.error('保存失败，请重试')
@@ -512,10 +491,15 @@ const handleSaveBudget = async () => {
   savingBudget.value = true
   
   try {
-    await updateBudget(budgetForm.value)
+    const res = await updateBudget(budgetForm.value)
+    if (!res || res.code !== 200) {
+      ElMessage.error(res?.message || '保存失败，请重试')
+      return
+      } 
     window.dispatchEvent(new Event('warning-count-refresh'))
     ElMessage.success('预算设置已保存')
     await loadBudgetInfo()
+    await loadWeeklyBreakdown()
   } catch (error) {
     console.error('保存预算设置失败:', error)
     ElMessage.error('保存失败，请重试')
@@ -954,8 +938,6 @@ const handleSaveBudget = async () => {
     box-shadow: 0 6px 20px rgba(64, 158, 255, 0.4);
   }
 }
-
-// ===== TODO 提示 =====
 .todo-alert {
   margin-bottom: 20px;
   border-radius: 8px;
@@ -1052,12 +1034,6 @@ const handleSaveBudget = async () => {
       }
     }
   }
-}
-
-// ===== 应急资金提示 =====
-.emergency-hint {
-  color: #f56c6c !important;
-  font-weight: 500;
 }
 
 // ===== 空状态占位 =====

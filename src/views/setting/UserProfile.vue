@@ -166,7 +166,7 @@
             >
               <div class="account-info">
                 <div class="account-name-wrapper">
-                  <span class="account-icon">{{ getAccountIcon(account.accountType) }}</span>
+                  <span class="account-icon">📒</span>
                   <span class="account-name">{{ account.accountName }}</span>
                   <el-tag v-if="currentAccountId === account.id" size="small" type="primary" effect="plain">
                     当前
@@ -179,7 +179,6 @@
                   <span class="balance-label">余额：</span>
                   <span class="balance-value">¥{{ formatBalance(account.balance) }}</span>
                 </div>
-                <div class="account-type">{{ getAccountTypeName(account.accountType) }}</div>
               </div>
               <div class="account-actions">
                 <el-button
@@ -231,19 +230,11 @@
             <el-form-item label="账户名称" prop="accountName">
               <el-input
                 v-model="accountForm.accountName"
-                placeholder="例如：支付宝、微信、银行卡"
+                placeholder="例如：我的账户"
                 maxlength="20"
               />
             </el-form-item>
-            <el-form-item label="账户类型" prop="accountType">
-  <el-select v-model="accountForm.accountType" placeholder="请选择账户类型" style="width: 100%">
-    <el-option label="银行卡" value="BANK_CARD" />
-    <el-option label="支付宝" value="ALIPAY" />
-    <el-option label="微信" value="WECHAT" />
-    <el-option label="现金" value="CASH" />
-    <el-option label="其他" value="OTHER" />
-  </el-select>
-</el-form-item>
+            
 
 <el-form-item label="初始余额" prop="balance">
   <el-input-number
@@ -259,7 +250,7 @@
     v-model="accountForm.remark"
     type="textarea"
     :rows="3"
-    placeholder="选填，可记录卡号后四位等信息"
+    placeholder="选填"
     maxlength="100"
   />
 </el-form-item>
@@ -318,7 +309,6 @@ const passwordForm = ref({
 
 const accountForm = ref({
   accountName: '',
-  accountType: null,
   balance: 0,
   remark: ''
 })
@@ -327,9 +317,6 @@ const accountRules = {
   accountName: [
     { required: true, message: '请输入账户名称', trigger: 'blur' },
     { min: 1, max: 20, message: '长度在 1 到 20 个字符', trigger: 'blur' }
-  ],
-  accountType: [
-    { required: true, message: '请选择账户类型', trigger: 'change' }
   ]
 }
 
@@ -387,13 +374,6 @@ const accountStats = computed(() => [
 ])
 
 const currentAccountId = computed(() => userInfo.value.currentAccountId ?? userInfo.value.current_account_id ?? null)
-const accountTypeValueMap = {
-  CASH: 1,
-  BANK_CARD: 2,
-  ALIPAY: 3,
-  WECHAT: 4,
-  OTHER: 5
-}
 
 const accountTypeKeyMap = {
   1: 'CASH',
@@ -509,16 +489,6 @@ const getAccountIconLegacy = (type) => {
     OTHER: '📦'
   }
   return iconMap[normalizedType] || '📦'
-}
-const getAccountTypeNameLegacy = (type) => {
-  const nameMap = {
-    BANK_CARD: '银行卡',
-    ALIPAY: '支付宝',
-    WECHAT: '微信',
-    CASH: '现金',
-    OTHER: '其他'
-  }
-  return nameMap[type] || '其他'
 }
 
 const formatBalance = (balance) => {
@@ -676,7 +646,6 @@ const showAddAccountDialog = () => {
   accountDialogTitle.value = '添加账户'
   accountForm.value = {
     accountName: '',
-    accountType: null,
     balance: 0,
     remark: ''
   }
@@ -688,7 +657,6 @@ const handleEditAccount = (account) => {
   accountDialogTitle.value = '编辑账户'
   accountForm.value = {
     accountName: account.accountName,
-    accountType: normalizeAccountTypeKey(account.accountType),
     balance: account.balance ?? 0,
     remark: account.remark || ''
   }
@@ -704,8 +672,7 @@ const handleSaveAccount = async () => {
     savingAccount.value = true
     try {
       const payload = {
-        ...accountForm.value,
-        accountType: normalizeAccountTypeValue(accountForm.value.accountType)
+        ...accountForm.value
       }
       let res
       if (editingAccountId.value) {
@@ -778,7 +745,8 @@ const handleDeleteAccount = async (id, name) => {
     const res = await deleteAccount(id)
     if (res.code === 200) {
       ElMessage.success('账户已删除')
-      loadAccountList()
+      await loadUserInfo()
+      await loadAccountList()
     } else {
       ElMessage.error(res.message || '删除失败')
     }

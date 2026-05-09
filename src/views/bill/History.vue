@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Search, Refresh, Edit, Delete } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getBillList, deleteBill, updateBill } from '@/api/bill'
@@ -40,6 +40,35 @@ const editForm = ref({
   consumptionAttribute: null
 })
 
+const filteredEditCategoryOptions = computed(() => {
+  return categoryOptions.value.filter((item) => {
+    if (!editForm.value.billType) return true
+    return item.type === editForm.value.billType
+  })
+})
+
+const handleCategoriesUpdated = (event) => {
+  if (!Array.isArray(event.detail)) return
+
+  categoryOptions.value = event.detail.map(cat => ({
+    id: cat.id,
+    label: cat.name,
+    type: cat.type
+  }))
+
+  categoryMap.value = Object.fromEntries(
+    event.detail.map(cat => [cat.id, cat.name])
+  )
+
+  if (
+    editForm.value.categoryId &&
+    !categoryOptions.value.some(item => item.id === editForm.value.categoryId)
+  ) {
+    editForm.value.categoryId = null
+    editForm.value.consumptionAttribute = null
+  }
+}
+
 
 const syncPagination = (pageData = {}) => {
   pagination.value.total = Number(pageData.total || 0)
@@ -78,7 +107,8 @@ const fetchCategoryList = async () => {
       
       categoryOptions.value = categories.map(cat => ({
         id: cat.id,
-        label: cat.name
+        label: cat.name,
+        type: cat.type
       }))
       
       categoryMap.value = Object.fromEntries(
@@ -97,7 +127,8 @@ const fetchCategoryList = async () => {
 const useLocalCategories = () => {
   categoryOptions.value = allCategories.map(cat => ({
     id: cat.id,
-    label: cat.name
+    label: cat.name,
+    type: cat.type
   }))
   
   categoryMap.value = Object.fromEntries(
@@ -253,6 +284,11 @@ const handleDateChange = (val) => {
 onMounted(() => {
   fetchCategoryList()
   fetchBillList()
+  window.addEventListener('categories-updated', handleCategoriesUpdated)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('categories-updated', handleCategoriesUpdated)
 })
 </script>
 
@@ -348,12 +384,13 @@ onMounted(() => {
           </template>
         </el-table-column>
         <el-table-column label="性质" width="120">
-          <template #default="{ row }">
-            <el-tag size="small" effect="light">
-              {{ getAttributeLabel(row.consumptionAttribute) }}
-            </el-tag>
-          </template>
-        </el-table-column>
+  <template #default="{ row }">
+    <el-tag v-if="row.billType === 'EXPENSE'" size="small" effect="light">
+      {{ getAttributeLabel(row.consumptionAttribute) }}
+    </el-tag>
+    <span v-else>-</span>
+  </template>
+</el-table-column>
         <el-table-column prop="remark" label="备注" min-width="180" />
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
@@ -403,7 +440,7 @@ onMounted(() => {
     <el-form-item label="分类">
       <el-select v-model="editForm.categoryId" style="width: 100%">
         <el-option
-          v-for="item in categoryOptions"
+          v-for="item in filteredEditCategoryOptions"
           :key="item.id"
           :label="item.label"
           :value="item.id"
@@ -420,13 +457,13 @@ onMounted(() => {
       />
     </el-form-item>
 
-    <el-form-item label="性质">
-      <el-select v-model="editForm.consumptionAttribute" clearable style="width: 100%">
-        <el-option label="生存必需" :value="1" />
-        <el-option label="改善生活" :value="2" />
-        <el-option label="欲望消费" :value="3" />
-      </el-select>
-    </el-form-item>
+   <el-form-item v-if="editForm.billType === 'EXPENSE'" label="性质">
+  <el-select v-model="editForm.consumptionAttribute" clearable style="width: 100%">
+    <el-option label="生存必需" :value="1" />
+    <el-option label="改善生活" :value="2" />
+    <el-option label="欲望消费" :value="3" />
+  </el-select>
+</el-form-item> 
 
     <el-form-item label="备注">
       <el-input

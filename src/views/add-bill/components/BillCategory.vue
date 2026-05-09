@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus } from '@element-plus/icons-vue'
 import { allCategories } from '../constants'
-import { getCategoryList, addCategory } from '@/api/category'
+import { getCategoryList, addCategory, deleteCategory } from '@/api/category'
 
 const props = defineProps({
   modelValue: { type: String, default: 'EXPENSE' },
@@ -85,8 +85,17 @@ const selectCategory = (category) => {
         cancelButtonText: '取消',
         type: 'warning'
       }
-    ).then(() => {
+    ).then(async () => {
+      const res = await deleteCategory(category.id)
+      if (res?.code !== 200) {
+        ElMessage.error(res?.message || res?.msg || '删除失败')
+        return
+      }
+
       localCategories.value = localCategories.value.filter((c) => c.id !== category.id)
+      if (props.billForm.categoryId === category.id) {
+        props.billForm.categoryId = null
+      }
       syncCategoryCache()
       ElMessage.success('删除成功')
     }).catch(() => {})
@@ -105,8 +114,11 @@ const addNewCategory = async () => {
 
   const payload = {
     name,
-    type: props.modelValue,
-    defaultType: newCategoryForm.value.attribute
+    type: props.modelValue
+  }
+
+  if (props.modelValue === 'EXPENSE') {
+    payload.defaultType = newCategoryForm.value.attribute
   }
 
   try {
@@ -118,7 +130,9 @@ const addNewCategory = async () => {
 
     const createdCategory = normalizeCategory({
       ...res.data,
-      defaultType: res.data.defaultType ?? newCategoryForm.value.attribute
+      defaultType: props.modelValue === 'EXPENSE'
+        ? (res.data.defaultType ?? newCategoryForm.value.attribute)
+        : null
     })
 
     localCategories.value.push(createdCategory)
@@ -209,7 +223,7 @@ onMounted(() => {
         <el-input v-model="newCategoryForm.name" placeholder="例如：追星周边" />
       </el-form-item>
 
-      <el-form-item label="消费属性">
+      <el-form-item v-if="modelValue === 'EXPENSE'" label="消费属性">
         <div class="attribute-options">
           <div
             class="attribute-option"
@@ -232,7 +246,7 @@ onMounted(() => {
             :class="{ active: newCategoryForm.attribute === 3 }"
             @click="newCategoryForm.attribute = 3"
           >
-            <div>非必要消费</div>
+            <div>欲望消费</div>
           </div>
         </div>
       </el-form-item>

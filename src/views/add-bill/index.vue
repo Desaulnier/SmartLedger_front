@@ -31,7 +31,7 @@ const submitting = ref(false)
 
     <div class="main-content">
       <div class="content-left">
-        <BillQuickScene v-model="billForm" />
+        <BillQuickScene v-model="billForm" v-model:bill-type="billType"/>
         <BillCategory v-model="billType" :bill-form="billForm" />
       </div>
 

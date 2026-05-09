@@ -118,7 +118,7 @@ const goToForgotPassword = () => {
   router.push({ name: "ForgotPassword" });
 };
 
-const options = {
+const options = {//登录页粒子效果配置
   fpsLimit: 60,
   interactivity: {
     detectsOn: "canvas",
